@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CustomizationScene } from './scenes/CustomizationScene';
+import { CharacterScene } from './scenes/CharacterScene';
 import { GameScene } from './scenes/GameScene';
 
 new Phaser.Game({
@@ -12,5 +12,5 @@ new Phaser.Game({
     width: window.innerWidth,
     height: window.innerHeight
   },
-  scene: [CustomizationScene, GameScene]
+  scene: [CharacterScene, GameScene]
 });

@@ -7,6 +7,8 @@ import { Inventory } from '../features/inventory/Inventory';
 import { BuildManager } from '../features/building/BuildManager';
 import { CraftingSystem } from '../features/crafting/CraftingSystem';
 import { Hud } from '../ui/Hud';
+import { Appearance } from '../features/equipment/types';
+import { drawCharacter } from '../features/equipment/CharacterRenderer';
 
 export class GameScene extends Phaser.Scene {
   private graphics!: Phaser.GameObjects.Graphics;
@@ -22,7 +24,10 @@ export class GameScene extends Phaser.Scene {
     speed: 4.5
   };
 
-  private playerColor = 0xff5555;
+  private appearance: Appearance = {
+    skin: 0xf2c79a,
+    equipped: { head: null, chest: null, legs: null, hands: null, feet: null }
+  };
 
   private buildMode = false;
   private removeMode = false;
@@ -46,8 +51,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    const savedColor = this.registry.get('playerColor');
-		this.playerColor = typeof savedColor === 'number' ? savedColor : 0xff5555;
+    const saved = this.registry.get('appearance');
+    if (saved) {
+      this.appearance = saved as Appearance;
+    }
 
     this.graphics = this.add.graphics();
 
@@ -89,25 +96,11 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     const dt = Math.min(delta / 1000, 0.05);
 
-    if (this.keyBuild && Phaser.Input.Keyboard.JustDown(this.keyBuild)) {
-      this.toggleBuild();
-    }
-
-    if (this.keyRemove && Phaser.Input.Keyboard.JustDown(this.keyRemove)) {
-      this.toggleRemove();
-    }
-
-    if (this.keyCraft && Phaser.Input.Keyboard.JustDown(this.keyCraft)) {
-      this.craft();
-    }
-
-    if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) {
-      this.selectItem('wood');
-    }
-
-    if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) {
-      this.selectItem('stone');
-    }
+    if (this.keyBuild && Phaser.Input.Keyboard.JustDown(this.keyBuild)) this.toggleBuild();
+    if (this.keyRemove && Phaser.Input.Keyboard.JustDown(this.keyRemove)) this.toggleRemove();
+    if (this.keyCraft && Phaser.Input.Keyboard.JustDown(this.keyCraft)) this.craft();
+    if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) this.selectItem('wood');
+    if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectItem('stone');
 
     this.updateMovement(dt);
     this.updateCamera();
@@ -133,10 +126,8 @@ export class GameScene extends Phaser.Scene {
     horizontal = Phaser.Math.Clamp(horizontal, -1, 1);
     vertical = Phaser.Math.Clamp(vertical, -1, 1);
 
-    // Экранное управление переводим в изометрические мировые направления
     const dx = horizontal + vertical;
     const dy = vertical - horizontal;
-
     const length = Math.hypot(dx, dy);
 
     if (length > 0) {
@@ -149,10 +140,7 @@ export class GameScene extends Phaser.Scene {
     const p = worldToScreen(this.player.x, this.player.y, 0);
     const cam = this.cameras.main;
 
-    cam.setScroll(
-      p.x - cam.width / 2,
-      p.y + TILE_H / 2 - cam.height / 2
-    );
+    cam.setScroll(p.x - cam.width / 2, p.y + TILE_H / 2 - cam.height / 2);
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
@@ -177,21 +165,13 @@ export class GameScene extends Phaser.Scene {
 
   private toggleBuild(): void {
     this.buildMode = !this.buildMode;
-
-    if (this.buildMode) {
-      this.removeMode = false;
-    }
-
+    if (this.buildMode) this.removeMode = false;
     this.updateHud();
   }
 
   private toggleRemove(): void {
     this.removeMode = !this.removeMode;
-
-    if (this.removeMode) {
-      this.buildMode = false;
-    }
-
+    if (this.removeMode) this.buildMode = false;
     this.updateHud();
   }
 
@@ -199,7 +179,6 @@ export class GameScene extends Phaser.Scene {
     this.selectedItem = item;
     this.buildMode = true;
     this.removeMode = false;
-
     this.updateHud();
   }
 
@@ -209,15 +188,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryPlace(x: number, y: number): void {
-    if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) {
-      return;
-    }
+    if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) return;
 
     const tile = WorldGen.getTile(x, y, WORLD_SEED);
 
-    if (!this.build.canPlaceAt(tile, x, y)) {
-      return;
-    }
+    if (!this.build.canPlaceAt(tile, x, y)) return;
 
     if (this.inventory.remove(this.selectedItem, 1)) {
       this.build.place(x, y, this.selectedItem);
@@ -240,12 +215,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    const mode = this.removeMode
-      ? 'Снос'
-      : this.buildMode
-        ? 'Строительство'
-        : 'Сбор';
-
+    const mode = this.removeMode ? 'Снос' : this.buildMode ? 'Строительство' : 'Сбор';
     const selected = this.selectedItem === 'wood' ? 'дерево' : 'камень';
 
     this.hud.setBuildMode(this.buildMode);
@@ -253,10 +223,10 @@ export class GameScene extends Phaser.Scene {
     this.hud.setSelected(this.selectedItem);
 
     this.hud.setInfo(
-      `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')}
-Режим: ${mode} | Материал: ${selected}
-ПК: WASD/стрелки, ЛКМ — действие, ПКМ — снос, B/R/X/1/2
-Мобильный: кнопки внизу экрана`
+      `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')}\n` +
+      `Режим: ${mode} | Материал: ${selected}\n` +
+      `ПК: WASD/стрелки, ЛКМ — действие, ПКМ — снос, B/R/X/1/2\n` +
+      `Мобильный: кнопки внизу экрана`
     );
   }
 
@@ -283,18 +253,12 @@ export class GameScene extends Phaser.Scene {
         const placedItem = this.build.getPlaced(x, y);
 
         if (placedItem) {
-          drawables.push({
-            depth: x + y,
-            draw: () => this.drawBlock(x, y, placedItem)
-          });
+          drawables.push({ depth: x + y, draw: () => this.drawBlock(x, y, placedItem) });
           continue;
         }
 
         if (tile.resource && !this.build.isHarvested(x, y)) {
-          drawables.push({
-            depth: x + y,
-            draw: () => this.drawResource(x, y, tile.resource!)
-          });
+          drawables.push({ depth: x + y, draw: () => this.drawResource(x, y, tile.resource!) });
         }
       }
     }
@@ -315,30 +279,17 @@ export class GameScene extends Phaser.Scene {
     const p = worldToScreen(x, y, 0);
     const color = this.terrainColor(tile.terrain);
 
-    this.drawDiamond(
-      p.x,
-      p.y,
-      color,
-      tile.terrain === 'water' ? 0.95 : 1,
-      0x000000,
-      0.08
-    );
+    this.drawDiamond(p.x, p.y, color, tile.terrain === 'water' ? 0.95 : 1, 0x000000, 0.08);
   }
 
   private terrainColor(terrain: TileData['terrain']): number {
     switch (terrain) {
-      case 'water':
-        return 0x2c62b8;
-      case 'sand':
-        return 0xd7c58a;
-      case 'grass':
-        return 0x4a7f3c;
-      case 'stone':
-        return 0x7f8791;
-      case 'snow':
-        return 0xe8f1fb;
-      default:
-        return 0x000000;
+      case 'water': return 0x2c62b8;
+      case 'sand': return 0xd7c58a;
+      case 'grass': return 0x4a7f3c;
+      case 'stone': return 0x7f8791;
+      case 'snow': return 0xe8f1fb;
+      default: return 0x000000;
     }
   }
 
@@ -369,11 +320,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawResource(
-    x: number,
-    y: number,
-    resource: 'tree' | 'rock'
-  ): void {
+  private drawResource(x: number, y: number, resource: 'tree' | 'rock'): void {
     const p = worldToScreen(x, y, 0);
     const centerX = p.x;
     const centerY = p.y + TILE_H / 2;
@@ -411,35 +358,15 @@ export class GameScene extends Phaser.Scene {
 
     const colors =
       item === 'wood'
-        ? {
-            top: 0xb08a54,
-            right: 0x8c6a3f,
-            left: 0x77572f
-          }
-        : {
-            top: 0xaab2bd,
-            right: 0x828a95,
-            left: 0x6d747d
-          };
+        ? { top: 0xb08a54, right: 0x8c6a3f, left: 0x77572f }
+        : { top: 0xaab2bd, right: 0x828a95, left: 0x6d747d };
 
-    this.drawPoly(
-      [topRight, topBottom, groundBottom, groundRight],
-      colors.right
-    );
-
-    this.drawPoly(
-      [topLeft, topBottom, groundBottom, groundLeft],
-      colors.left
-    );
-
+    this.drawPoly([topRight, topBottom, groundBottom, groundRight], colors.right);
+    this.drawPoly([topLeft, topBottom, groundBottom, groundLeft], colors.left);
     this.drawDiamond(top.x, top.y, colors.top, 1, 0x000000, 0.16);
   }
 
-  private drawPoly(
-    points: Array<{ x: number; y: number }>,
-    color: number,
-    alpha = 1
-  ): void {
+  private drawPoly(points: Array<{ x: number; y: number }>, color: number, alpha = 1): void {
     const g = this.graphics;
 
     g.fillStyle(color, alpha);
@@ -456,15 +383,13 @@ export class GameScene extends Phaser.Scene {
 
   private drawPlayer(): void {
     const p = worldToScreen(this.player.x, this.player.y, 0);
-    const centerX = p.x;
-    const centerY = p.y + TILE_H / 2;
+    const cx = p.x;
+    const groundY = p.y + TILE_H / 2;
     const g = this.graphics;
 
     g.fillStyle(0x000000, 0.25);
-    g.fillEllipse(centerX, centerY + 6, 20, 9);
+    g.fillEllipse(cx, groundY + 4, 20, 9);
 
-    g.fillStyle(this.playerColor, 1);
-    g.fillRect(centerX - 5, centerY - 6, 10, 12);
-    g.fillCircle(centerX, centerY - 10, 7);
+    drawCharacter(g, cx, groundY + 6, 2.4, this.appearance);
   }
 }
