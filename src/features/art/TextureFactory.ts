@@ -20,7 +20,10 @@ function diamond(gx: number, gy: number): number {
 
 function addTexture(scene: Phaser.Scene, key: string, canvas: HTMLCanvasElement): void {
   const tex = scene.textures.addCanvas(key, canvas);
-  tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+
+  if (tex) {
+    tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  }
 }
 
 function makeIsoTile(scene: Phaser.Scene, key: string, c: { base: number; alt: number; edge: number; seed: number }): void {
