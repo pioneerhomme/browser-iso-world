@@ -3,6 +3,7 @@ import { EquipmentState } from '../features/equipment/EquipmentState';
 import { ITEMS } from '../features/equipment/items';
 import { drawCharacter, drawItemIcon } from '../features/equipment/CharacterRenderer';
 import { EQUIPMENT_SLOTS, EquipmentSlot, SLOT_LABELS } from '../features/equipment/types';
+import { SaveSystem } from '../features/save/SaveSystem';
 
 const SKIN_COLORS = [0xf2c79a, 0xd9a066, 0x8d5a3b, 0xf7d7b0, 0xb07b4f, 0x6b4423];
 
@@ -34,6 +35,11 @@ export class CharacterScene extends Phaser.Scene {
     const w = this.scale.width;
     const h = this.scale.height;
 
+    const save = SaveSystem.load();
+    if (save) {
+      this.state = EquipmentState.fromSnapshot(save.skin, save.equipped, save.equipmentInventory);
+    }
+
     this.cell = Math.max(44, Math.min(64, Math.floor(Math.min(w, h) / 9)));
 
     const bottomH = this.cell * 3 + 60;
@@ -60,7 +66,7 @@ export class CharacterScene extends Phaser.Scene {
     });
 
     const start = this.add
-      .text(w - 16, 16, 'Начать игру', {
+      .text(w - 16, 16, save ? 'Продолжить' : 'Начать игру', {
         fontSize: '18px',
         color: '#ffffff',
         backgroundColor: '#274060',
@@ -70,9 +76,35 @@ export class CharacterScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
 
     start.on('pointerdown', () => {
+      const snap = this.state.snapshot();
+
+      SaveSystem.update({
+        skin: snap.skin,
+        equipped: snap.equipped,
+        equipmentInventory: snap.inventory
+      });
+
       this.registry.set('appearance', this.state.appearance());
       this.scene.start('GameScene');
     });
+
+    if (save) {
+      const reset = this.add
+        .text(w - 16, 64, 'Начать заново', {
+          fontSize: '14px',
+          color: '#ffb4b4',
+          backgroundColor: '#3a1d20',
+          padding: { left: 10, right: 10, top: 6, bottom: 6 }
+        })
+        .setOrigin(1, 0)
+        .setInteractive({ useHandCursor: true });
+
+      reset.on('pointerdown', () => {
+        SaveSystem.clear();
+        this.state = new EquipmentState();
+        this.refresh();
+      });
+    }
 
     // превью персонажа
     this.previewX = Math.max(90, w * 0.22);
@@ -137,7 +169,6 @@ export class CharacterScene extends Phaser.Scene {
     const moved = Math.hypot(pointer.upX - pointer.downX, pointer.upY - pointer.downY);
 
     if (moved < 8) {
-      // тап: надеть или снять
       if (from === 'inventory') {
         this.state.equip(id);
       } else {
@@ -199,11 +230,9 @@ export class CharacterScene extends Phaser.Scene {
   }
 
   private refresh(): void {
-    // превью
     this.previewGraphics.clear();
     drawCharacter(this.previewGraphics, this.previewX, this.previewFeetY, this.previewUnit, this.state.appearance());
 
-    // динамические иконки
     for (const c of this.dynamic) {
       c.destroy();
     }

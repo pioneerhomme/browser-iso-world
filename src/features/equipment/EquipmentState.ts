@@ -1,5 +1,11 @@
 import { ITEMS, STARTER_ITEMS } from './items';
-import { Appearance, EquipmentSlot } from './types';
+import { Appearance, EquipmentSlot, EQUIPMENT_SLOTS } from './types';
+
+export interface EquipmentSnapshot {
+  skin: number;
+  equipped: Record<EquipmentSlot, string | null>;
+  inventory: string[];
+}
 
 export class EquipmentState {
   skin: number;
@@ -18,6 +24,32 @@ export class EquipmentState {
 
     const equippedIds = new Set(Object.values(this.equipped));
     this.inventory = STARTER_ITEMS.filter((id) => !equippedIds.has(id));
+  }
+
+  static fromSnapshot(
+    skin: number,
+    equipped: Partial<Record<EquipmentSlot, string | null>>,
+    inventory: string[]
+  ): EquipmentState {
+    const state = new EquipmentState(skin);
+
+    for (const slot of EQUIPMENT_SLOTS) {
+      const id = equipped[slot];
+      state.equipped[slot] = id && ITEMS[id] && ITEMS[id].slot === slot ? id : null;
+    }
+
+    const equippedIds = new Set(Object.values(state.equipped));
+    const seen = new Set<string>();
+    const inv: string[] = [];
+
+    for (const id of inventory) {
+      if (!ITEMS[id] || equippedIds.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      inv.push(id);
+    }
+
+    state.inventory = inv;
+    return state;
   }
 
   getEquipped(slot: EquipmentSlot): string | null {
@@ -57,6 +89,14 @@ export class EquipmentState {
     return {
       skin: this.skin,
       equipped: { ...this.equipped }
+    };
+  }
+
+  snapshot(): EquipmentSnapshot {
+    return {
+      skin: this.skin,
+      equipped: { ...this.equipped },
+      inventory: [...this.inventory]
     };
   }
 }

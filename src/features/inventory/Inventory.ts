@@ -39,4 +39,12 @@ export class Inventory {
 
     return true;
   }
+
+  serialize(): Partial<Record<ItemId, number>> {
+    const out: Partial<Record<ItemId, number>> = {};
+    this.counts.forEach((amount, item) => {
+      out[item] = amount;
+    });
+    return out;
+  }
 }

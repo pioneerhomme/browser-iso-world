@@ -18,18 +18,9 @@ export class BuildManager {
   }
 
   canPlaceAt(tile: TileData, x: number, y: number): boolean {
-    if (tile.terrain === 'water') {
-      return false;
-    }
-
-    if (this.placed.has(this.key(x, y))) {
-      return false;
-    }
-
-    if (tile.resource && !this.harvested.has(this.key(x, y))) {
-      return false;
-    }
-
+    if (tile.terrain === 'water') return false;
+    if (this.placed.has(this.key(x, y))) return false;
+    if (tile.resource && !this.harvested.has(this.key(x, y))) return false;
     return true;
   }
 
@@ -41,27 +32,17 @@ export class BuildManager {
     const k = this.key(x, y);
     const item = this.placed.get(k);
 
-    if (!item) {
-      return false;
-    }
+    if (!item) return false;
 
     this.placed.delete(k);
     inventory.add(item, 1);
-
     return true;
   }
 
-  harvest(
-    x: number,
-    y: number,
-    tile: TileData,
-    inventory: Inventory
-  ): boolean {
+  harvest(x: number, y: number, tile: TileData, inventory: Inventory): boolean {
     const k = this.key(x, y);
 
-    if (!tile.resource || this.harvested.has(k)) {
-      return false;
-    }
+    if (!tile.resource || this.harvested.has(k)) return false;
 
     this.harvested.add(k);
 
@@ -72,5 +53,17 @@ export class BuildManager {
     }
 
     return true;
+  }
+
+  serialize(): { placed: Record<string, ItemId>; harvested: string[] } {
+    return {
+      placed: Object.fromEntries(this.placed),
+      harvested: [...this.harvested]
+    };
+  }
+
+  restore(placed: Record<string, ItemId>, harvested: string[]): void {
+    this.placed = new Map(Object.entries(placed));
+    this.harvested = new Set(harvested);
   }
 }

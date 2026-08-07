@@ -9,14 +9,15 @@ import { CraftingSystem } from '../features/crafting/CraftingSystem';
 import { Hud } from '../ui/Hud';
 import { Appearance } from '../features/equipment/types';
 import { drawCharacter } from '../features/equipment/CharacterRenderer';
+import { SaveSystem } from '../features/save/SaveSystem';
 
 export class GameScene extends Phaser.Scene {
   private graphics!: Phaser.GameObjects.Graphics;
   private hud!: Hud;
 
-  private inventory = new Inventory({ wood: 10, stone: 0 });
+  private inventory!: Inventory;
   private build = new BuildManager();
-  private crafting = new CraftingSystem(this.inventory);
+  private crafting!: CraftingSystem;
 
   private player = {
     x: 0,
@@ -33,6 +34,8 @@ export class GameScene extends Phaser.Scene {
   private removeMode = false;
   private selectedItem: ItemId = 'wood';
 
+  private saveTimer = 0;
+
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
 
   private keyW?: Phaser.Input.Keyboard.Key;
@@ -46,14 +49,31 @@ export class GameScene extends Phaser.Scene {
   private keyOne?: Phaser.Input.Keyboard.Key;
   private keyTwo?: Phaser.Input.Keyboard.Key;
 
+  private onVisibility = (): void => {
+    if (document.hidden) {
+      this.persist();
+    }
+  };
+
   constructor() {
     super('GameScene');
   }
 
   create(): void {
-    const saved = this.registry.get('appearance');
-    if (saved) {
-      this.appearance = saved as Appearance;
+    const savedAppearance = this.registry.get('appearance');
+    if (savedAppearance) {
+      this.appearance = savedAppearance as Appearance;
+    }
+
+    const save = SaveSystem.load();
+
+    this.inventory = new Inventory(save?.resources ?? { wood: 10, stone: 0 });
+    this.crafting = new CraftingSystem(this.inventory);
+
+    if (save) {
+      this.build.restore(save.placed, save.harvested);
+      this.player.x = save.player.x;
+      this.player.y = save.player.y;
     }
 
     this.graphics = this.add.graphics();
@@ -82,6 +102,11 @@ export class GameScene extends Phaser.Scene {
       this.onPointerDown(pointer);
     });
 
+    document.addEventListener('visibilitychange', this.onVisibility);
+    this.events.once('shutdown', () => {
+      document.removeEventListener('visibilitychange', this.onVisibility);
+    });
+
     this.hud = new Hud({
       onToggleBuild: () => this.toggleBuild(),
       onToggleRemove: () => this.toggleRemove(),
@@ -105,6 +130,23 @@ export class GameScene extends Phaser.Scene {
     this.updateMovement(dt);
     this.updateCamera();
     this.renderWorld();
+
+    this.saveTimer += dt;
+    if (this.saveTimer >= 5) {
+      this.saveTimer = 0;
+      this.persist();
+    }
+  }
+
+  private persist(): void {
+    const world = this.build.serialize();
+
+    SaveSystem.update({
+      resources: this.inventory.serialize(),
+      placed: world.placed,
+      harvested: world.harvested,
+      player: { x: this.player.x, y: this.player.y }
+    });
   }
 
   private updateMovement(dt: number): void {
@@ -183,8 +225,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private craft(): void {
-    this.crafting.craftWoodToStone();
-    this.updateHud();
+    if (this.crafting.craftWoodToStone()) {
+      this.updateHud();
+      this.persist();
+    }
   }
 
   private tryPlace(x: number, y: number): void {
@@ -197,12 +241,14 @@ export class GameScene extends Phaser.Scene {
     if (this.inventory.remove(this.selectedItem, 1)) {
       this.build.place(x, y, this.selectedItem);
       this.updateHud();
+      this.persist();
     }
   }
 
   private tryRemove(x: number, y: number): void {
     if (this.build.remove(x, y, this.inventory)) {
       this.updateHud();
+      this.persist();
     }
   }
 
@@ -211,6 +257,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.build.harvest(x, y, tile, this.inventory)) {
       this.updateHud();
+      this.persist();
     }
   }
 
