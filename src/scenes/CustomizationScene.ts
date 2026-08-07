@@ -48,7 +48,7 @@ export class CustomizationScene extends Phaser.Scene {
         fontSize: '24px',
         color: '#ffffff',
         backgroundColor: '#274060',
-        padding: 12
+        padding: { left: 12, right: 12, top: 8, bottom: 8 }
       })
       .setInteractive({ useHandCursor: true });
 

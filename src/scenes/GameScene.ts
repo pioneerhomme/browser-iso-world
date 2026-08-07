@@ -46,7 +46,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.playerColor = this.registry.get('playerColor', 0xff5555) as number;
+    const savedColor = this.registry.get('playerColor');
+		this.playerColor = typeof savedColor === 'number' ? savedColor : 0xff5555;
 
     this.graphics = this.add.graphics();
 
