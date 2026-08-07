@@ -8,13 +8,14 @@ export interface SaveData {
   equipmentInventory: string[];
   resources: Partial<Record<ItemId, number>>;
   placed: Record<string, ItemId>;
-  harvested: string[];
+  harvested: Record<string, number>;
   player: { x: number; y: number };
+  zoom: number;
   savedAt: number;
 }
 
 const KEY = 'browser-iso-world-save';
-const VERSION = 1;
+const VERSION = 2;
 
 export function defaultSave(): SaveData {
   return {
@@ -24,8 +25,9 @@ export function defaultSave(): SaveData {
     equipmentInventory: [],
     resources: { wood: 10, stone: 0 },
     placed: {},
-    harvested: [],
+    harvested: {},
     player: { x: 0, y: 0 },
+    zoom: 1.5,
     savedAt: 0
   };
 }
@@ -52,7 +54,7 @@ export class SaveSystem {
     try {
       localStorage.setItem(KEY, JSON.stringify(next));
     } catch {
-      // переполнение хранилища и т.п. — молча пропускаем
+      // ignore
     }
   }
 

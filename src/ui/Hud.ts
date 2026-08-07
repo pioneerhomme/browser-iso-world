@@ -6,6 +6,8 @@ export interface HudCallbacks {
   onCraft: () => void;
   onSelectWood: () => void;
   onSelectStone: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
 }
 
 export class Hud {
@@ -21,14 +23,13 @@ export class Hud {
     this.bind('btn-craft', callbacks.onCraft);
     this.bind('btn-wood', callbacks.onSelectWood);
     this.bind('btn-stone', callbacks.onSelectStone);
+    this.bind('btn-zoom-in', callbacks.onZoomIn);
+    this.bind('btn-zoom-out', callbacks.onZoomOut);
   }
 
   private bind(id: string, handler: () => void): void {
     const el = document.getElementById(id);
-
-    if (!el) {
-      return;
-    }
+    if (!el) return;
 
     el.addEventListener('click', (event) => {
       event.preventDefault();

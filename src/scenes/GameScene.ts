@@ -1,6 +1,20 @@
 import Phaser from 'phaser';
-import { WORLD_SEED, TILE_H, VIEW_RADIUS } from '../core/constants';
+import {
+  WORLD_SEED,
+  TILE_H,
+  TERRAIN_SCALE,
+  BLOCK_SCALE,
+  CHAR_SCALE,
+  TREE_MIN,
+  TREE_MAX,
+  ROCK_MIN,
+  ROCK_MAX,
+  MIN_ZOOM,
+  MAX_ZOOM,
+  DEFAULT_ZOOM
+} from '../core/constants';
 import { worldToScreen, screenToWorld } from '../core/iso';
+import { hash2 } from '../core/rng';
 import { ItemId } from '../core/types';
 import { WorldGen } from '../features/world/WorldGen';
 import { Inventory } from '../features/inventory/Inventory';
@@ -37,6 +51,8 @@ export class GameScene extends Phaser.Scene {
   private walkTimer = 0;
   private walkFrame = 0;
   private moving = false;
+
+  private zoom = DEFAULT_ZOOM;
 
   private buildMode = false;
   private removeMode = false;
@@ -82,6 +98,7 @@ export class GameScene extends Phaser.Scene {
       this.build.restore(save.placed, save.harvested);
       this.player.x = save.player.x;
       this.player.y = save.player.y;
+      this.zoom = save.zoom;
     }
 
     this.pool = new SpritePool(this);
@@ -90,6 +107,7 @@ export class GameScene extends Phaser.Scene {
     this.walkTexB = getCharacterTexture(this, this.appearance, 1);
     this.playerSprite = this.add.image(0, 0, this.walkTexA);
     this.playerSprite.setOrigin(0.5, 1);
+    this.playerSprite.setScale(CHAR_SCALE);
 
     const keyboard = this.input.keyboard;
 
@@ -115,6 +133,10 @@ export class GameScene extends Phaser.Scene {
       this.onPointerDown(pointer);
     });
 
+    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
+      this.adjustZoom(dy > 0 ? -0.15 : 0.15);
+    });
+
     document.addEventListener('visibilitychange', this.onVisibility);
     this.events.once('shutdown', () => {
       document.removeEventListener('visibilitychange', this.onVisibility);
@@ -125,7 +147,9 @@ export class GameScene extends Phaser.Scene {
       onToggleRemove: () => this.toggleRemove(),
       onCraft: () => this.craft(),
       onSelectWood: () => this.selectItem('wood'),
-      onSelectStone: () => this.selectItem('stone')
+      onSelectStone: () => this.selectItem('stone'),
+      onZoomIn: () => this.adjustZoom(0.25),
+      onZoomOut: () => this.adjustZoom(-0.25)
     });
 
     this.updateHud();
@@ -152,6 +176,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private adjustZoom(delta: number): void {
+    this.zoom = Phaser.Math.Clamp(this.zoom + delta, MIN_ZOOM, MAX_ZOOM);
+  }
+
   private persist(): void {
     const world = this.build.serialize();
 
@@ -159,7 +187,8 @@ export class GameScene extends Phaser.Scene {
       resources: this.inventory.serialize(),
       placed: world.placed,
       harvested: world.harvested,
-      player: { x: this.player.x, y: this.player.y }
+      player: { x: this.player.x, y: this.player.y },
+      zoom: this.zoom
     });
   }
 
@@ -212,14 +241,18 @@ export class GameScene extends Phaser.Scene {
     const p = worldToScreen(this.player.x, this.player.y, 0);
     const cam = this.cameras.main;
 
-    cam.setScroll(p.x - cam.width / 2, p.y + TILE_H / 2 - cam.height / 2);
+    cam.setZoom(this.zoom);
+    cam.setScroll(
+      p.x - cam.width / (2 * this.zoom),
+      p.y + TILE_H / 2 - cam.height / (2 * this.zoom)
+    );
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     const cam = this.cameras.main;
 
-    const px = pointer.x + cam.scrollX;
-    const py = pointer.y + cam.scrollY;
+    const px = cam.scrollX + pointer.x / this.zoom;
+    const py = cam.scrollY + pointer.y / this.zoom;
 
     const tilePos = screenToWorld(px, py, 0);
 
@@ -269,14 +302,17 @@ export class GameScene extends Phaser.Scene {
     if (!this.build.canPlaceAt(tile, x, y)) return;
 
     if (this.inventory.remove(this.selectedItem, 1)) {
-      this.build.place(x, y, this.selectedItem);
-      this.updateHud();
-      this.persist();
+      if (this.build.place(x, y, this.selectedItem)) {
+        this.updateHud();
+        this.persist();
+      } else {
+        this.inventory.add(this.selectedItem, 1);
+      }
     }
   }
 
   private tryRemove(x: number, y: number): void {
-    if (this.build.remove(x, y, this.inventory)) {
+    if (this.build.removeTop(x, y, this.inventory)) {
       this.updateHud();
       this.persist();
     }
@@ -300,37 +336,67 @@ export class GameScene extends Phaser.Scene {
     this.hud.setSelected(this.selectedItem);
 
     this.hud.setInfo(
-      `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')}\n` +
+      `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')} | Зум: ${this.zoom.toFixed(2)}\n` +
       `Режим: ${mode} | Материал: ${selected}\n` +
-      `ПК: WASD/стрелки, ЛКМ — действие, ПКМ — снос, B/R/X/1/2\n` +
-      `Мобильный: кнопки внизу экрана`
+      `ПК: WASD, ЛКМ — действие, ПКМ — снос, колесико — зум, B/R/X/1/2\n` +
+      `Мобильный: кнопки внизу, ± — зум`
     );
   }
 
   private renderWorld(): void {
     const used = new Set<string>();
-    const radius = VIEW_RADIUS;
-    const cx = Math.round(this.player.x);
-    const cy = Math.round(this.player.y);
+    const cam = this.cameras.main;
 
-    for (let y = cy - radius; y <= cy + radius; y++) {
-      for (let x = cx - radius; x <= cx + radius; x++) {
+    // видимая область в мировых координатах
+    const corners = [
+      screenToWorld(cam.scrollX, cam.scrollY),
+      screenToWorld(cam.scrollX + cam.width / this.zoom, cam.scrollY),
+      screenToWorld(cam.scrollX, cam.scrollY + cam.height / this.zoom),
+      screenToWorld(cam.scrollX + cam.width / this.zoom, cam.scrollY + cam.height / this.zoom)
+    ];
+
+    const minX = Math.min(...corners.map((c) => c.x)) - 2;
+    const maxX = Math.max(...corners.map((c) => c.x)) + 2;
+    const minY = Math.min(...corners.map((c) => c.y)) - 10; // запас на высоту деревьев
+    const maxY = Math.max(...corners.map((c) => c.y)) + 2;
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
         const tile = WorldGen.getTile(x, y, WORLD_SEED);
         const p = worldToScreen(x, y, 0);
 
         const tKey = 't' + x + '|' + y;
         used.add(tKey);
-        this.pool.acquire(tKey, p.x, p.y, 'tile_' + tile.terrain, x + y).setOrigin(0.5, 0);
+        this.pool
+          .acquire(tKey, p.x, p.y, 'tile_' + tile.terrain, x + y)
+          .setOrigin(0.5, 0)
+          .setScale(TERRAIN_SCALE);
 
-        const oKey = 'o' + x + '|' + y;
-        const placedItem = this.build.getPlaced(x, y);
+        const stack = this.build.getStack(x, y);
 
-        if (placedItem) {
-          used.add(oKey);
-          this.pool.acquire(oKey, p.x, p.y + TILE_H, 'block_' + placedItem, x + y + 0.5).setOrigin(0.5, 1);
+        if (stack.length > 0) {
+          stack.forEach((item, z) => {
+            const oKey = `o${x}|${y}|${z}`;
+            used.add(oKey);
+            const sp = worldToScreen(x, y, z);
+            this.pool
+              .acquire(oKey, sp.x, sp.y + TILE_H, 'block_' + item, x + y + 0.5 + z * 0.01)
+              .setOrigin(0.5, 1)
+              .setScale(BLOCK_SCALE);
+          });
         } else if (tile.resource && !this.build.isHarvested(x, y)) {
+          const oKey = `o${x}|${y}|0`;
           used.add(oKey);
-          this.pool.acquire(oKey, p.x, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5).setOrigin(0.5, 1);
+
+          const scale =
+            tile.resource === 'tree'
+              ? Phaser.Math.Linear(TREE_MIN, TREE_MAX, hash2(x, y, 991))
+              : Phaser.Math.Linear(ROCK_MIN, ROCK_MAX, hash2(x, y, 992));
+
+          this.pool
+            .acquire(oKey, p.x, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5)
+            .setOrigin(0.5, 1)
+            .setScale(scale);
         }
       }
     }
@@ -338,7 +404,7 @@ export class GameScene extends Phaser.Scene {
     this.pool.flush(used);
 
     const p = worldToScreen(this.player.x, this.player.y, 0);
-    this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 6);
+    this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 4);
     this.playerSprite.setDepth(this.player.x + this.player.y + 0.5);
   }
 }
