@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { EquipmentState } from '../features/equipment/EquipmentState';
 import { ITEMS } from '../features/equipment/items';
-import { drawCharacter, drawItemIcon } from '../features/equipment/CharacterRenderer';
+import { getCharacterTexture, getItemIconTexture } from '../features/art/TextureFactory';
 import { EQUIPMENT_SLOTS, EquipmentSlot, SLOT_LABELS } from '../features/equipment/types';
 import { SaveSystem } from '../features/save/SaveSystem';
 
@@ -10,7 +10,7 @@ const SKIN_COLORS = [0xf2c79a, 0xd9a066, 0x8d5a3b, 0xf7d7b0, 0xb07b4f, 0x6b4423]
 export class CharacterScene extends Phaser.Scene {
   private state = new EquipmentState();
 
-  private previewGraphics!: Phaser.GameObjects.Graphics;
+  private previewImage!: Phaser.GameObjects.Image;
 
   private cell = 56;
   private invX0 = 0;
@@ -19,7 +19,7 @@ export class CharacterScene extends Phaser.Scene {
 
   private previewX = 0;
   private previewFeetY = 0;
-  private previewUnit = 10;
+  private previewScale = 6;
 
   private slotFrames = new Map<EquipmentSlot, Phaser.GameObjects.Rectangle>();
   private slotRects = new Map<EquipmentSlot, Phaser.Geom.Rectangle>();
@@ -106,11 +106,12 @@ export class CharacterScene extends Phaser.Scene {
       });
     }
 
-    // превью персонажа
+    // превью
     this.previewX = Math.max(90, w * 0.22);
     this.previewFeetY = topH * 0.92;
-    this.previewUnit = Math.max(8, Math.min(14, Math.floor(topH / 34)));
-    this.previewGraphics = this.add.graphics();
+    this.previewScale = Math.max(4, Math.min(7, Math.floor(topH / 60)));
+    this.previewImage = this.add.image(this.previewX, this.previewFeetY, '__DEFAULT');
+    this.previewImage.setOrigin(0.5, 1);
 
     // слоты
     const sx = Math.min(w * 0.52, w - this.cell * 2);
@@ -133,7 +134,7 @@ export class CharacterScene extends Phaser.Scene {
       }).setOrigin(0, 0.5);
     });
 
-    // панель инвентаря
+    // инвентарь
     this.add.rectangle(w / 2, h - bottomH / 2, w, bottomH, 0x10141c);
     this.add.text(16, h - bottomH + 8, 'Инвентарь', { fontSize: '14px', color: '#cfd6e6' });
 
@@ -141,7 +142,6 @@ export class CharacterScene extends Phaser.Scene {
     this.invX0 = 16;
     this.invY0 = h - bottomH + 34;
 
-    // drag-and-drop
     this.input.on('dragstart', (_pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.Container) => {
       this.children.bringToTop(obj);
       obj.setAlpha(0.85);
@@ -209,12 +209,10 @@ export class CharacterScene extends Phaser.Scene {
   }
 
   private makeItemContainer(id: string, from: 'inventory' | EquipmentSlot, x: number, y: number): Phaser.GameObjects.Container {
-    const def = ITEMS[id];
-
     const container = this.add.container(x, y);
 
-    const icon = this.add.graphics();
-    drawItemIcon(icon, def, this.cell * 0.8);
+    const icon = this.add.image(0, 0, getItemIconTexture(this, id));
+    icon.setScale(this.cell / 40);
     container.add(icon);
 
     container.setInteractive(
@@ -230,8 +228,8 @@ export class CharacterScene extends Phaser.Scene {
   }
 
   private refresh(): void {
-    this.previewGraphics.clear();
-    drawCharacter(this.previewGraphics, this.previewX, this.previewFeetY, this.previewUnit, this.state.appearance());
+    this.previewImage.setTexture(getCharacterTexture(this, this.state.appearance(), 0));
+    this.previewImage.setScale(this.previewScale);
 
     for (const c of this.dynamic) {
       c.destroy();

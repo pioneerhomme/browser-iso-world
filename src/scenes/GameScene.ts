@@ -1,19 +1,20 @@
 import Phaser from 'phaser';
-import { WORLD_SEED, TILE_W, TILE_H, VIEW_RADIUS } from '../core/constants';
+import { WORLD_SEED, TILE_H, VIEW_RADIUS } from '../core/constants';
 import { worldToScreen, screenToWorld } from '../core/iso';
-import { TileData, ItemId } from '../core/types';
+import { ItemId } from '../core/types';
 import { WorldGen } from '../features/world/WorldGen';
 import { Inventory } from '../features/inventory/Inventory';
 import { BuildManager } from '../features/building/BuildManager';
 import { CraftingSystem } from '../features/crafting/CraftingSystem';
 import { Hud } from '../ui/Hud';
 import { Appearance } from '../features/equipment/types';
-import { drawCharacter } from '../features/equipment/CharacterRenderer';
+import { getCharacterTexture } from '../features/art/TextureFactory';
 import { SaveSystem } from '../features/save/SaveSystem';
+import { SpritePool } from '../features/render/SpritePool';
 
 export class GameScene extends Phaser.Scene {
-  private graphics!: Phaser.GameObjects.Graphics;
   private hud!: Hud;
+  private pool!: SpritePool;
 
   private inventory!: Inventory;
   private build = new BuildManager();
@@ -29,6 +30,13 @@ export class GameScene extends Phaser.Scene {
     skin: 0xf2c79a,
     equipped: { head: null, chest: null, legs: null, hands: null, feet: null }
   };
+
+  private playerSprite!: Phaser.GameObjects.Image;
+  private walkTexA = '';
+  private walkTexB = '';
+  private walkTimer = 0;
+  private walkFrame = 0;
+  private moving = false;
 
   private buildMode = false;
   private removeMode = false;
@@ -76,7 +84,12 @@ export class GameScene extends Phaser.Scene {
       this.player.y = save.player.y;
     }
 
-    this.graphics = this.add.graphics();
+    this.pool = new SpritePool(this);
+
+    this.walkTexA = getCharacterTexture(this, this.appearance, 0);
+    this.walkTexB = getCharacterTexture(this, this.appearance, 1);
+    this.playerSprite = this.add.image(0, 0, this.walkTexA);
+    this.playerSprite.setOrigin(0.5, 1);
 
     const keyboard = this.input.keyboard;
 
@@ -130,6 +143,7 @@ export class GameScene extends Phaser.Scene {
     this.updateMovement(dt);
     this.updateCamera();
     this.renderWorld();
+    this.updateWalkAnimation(dt);
 
     this.saveTimer += dt;
     if (this.saveTimer >= 5) {
@@ -172,9 +186,25 @@ export class GameScene extends Phaser.Scene {
     const dy = vertical - horizontal;
     const length = Math.hypot(dx, dy);
 
-    if (length > 0) {
+    this.moving = length > 0;
+
+    if (this.moving) {
       this.player.x += (dx / length) * this.player.speed * dt;
       this.player.y += (dy / length) * this.player.speed * dt;
+    }
+  }
+
+  private updateWalkAnimation(dt: number): void {
+    if (this.moving) {
+      this.walkTimer += dt;
+      if (this.walkTimer > 0.18) {
+        this.walkTimer = 0;
+        this.walkFrame = this.walkFrame === 0 ? 1 : 0;
+        this.playerSprite.setTexture(this.walkFrame === 0 ? this.walkTexA : this.walkTexB);
+      }
+    } else if (this.walkFrame !== 0) {
+      this.walkFrame = 0;
+      this.playerSprite.setTexture(this.walkTexA);
     }
   }
 
@@ -278,165 +308,37 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderWorld(): void {
-    const g = this.graphics;
-    g.clear();
-
+    const used = new Set<string>();
     const radius = VIEW_RADIUS;
-    const centerX = Math.round(this.player.x);
-    const centerY = Math.round(this.player.y);
+    const cx = Math.round(this.player.x);
+    const cy = Math.round(this.player.y);
 
-    for (let y = centerY - radius; y <= centerY + radius; y++) {
-      for (let x = centerX - radius; x <= centerX + radius; x++) {
+    for (let y = cy - radius; y <= cy + radius; y++) {
+      for (let x = cx - radius; x <= cx + radius; x++) {
         const tile = WorldGen.getTile(x, y, WORLD_SEED);
-        this.drawTerrain(x, y, tile);
-      }
-    }
+        const p = worldToScreen(x, y, 0);
 
-    const drawables: Array<{ depth: number; draw: () => void }> = [];
+        const tKey = 't' + x + '|' + y;
+        used.add(tKey);
+        this.pool.acquire(tKey, p.x, p.y, 'tile_' + tile.terrain, x + y).setOrigin(0.5, 0);
 
-    for (let y = centerY - radius; y <= centerY + radius; y++) {
-      for (let x = centerX - radius; x <= centerX + radius; x++) {
-        const tile = WorldGen.getTile(x, y, WORLD_SEED);
+        const oKey = 'o' + x + '|' + y;
         const placedItem = this.build.getPlaced(x, y);
 
         if (placedItem) {
-          drawables.push({ depth: x + y, draw: () => this.drawBlock(x, y, placedItem) });
-          continue;
-        }
-
-        if (tile.resource && !this.build.isHarvested(x, y)) {
-          drawables.push({ depth: x + y, draw: () => this.drawResource(x, y, tile.resource!) });
+          used.add(oKey);
+          this.pool.acquire(oKey, p.x, p.y + TILE_H, 'block_' + placedItem, x + y + 0.5).setOrigin(0.5, 1);
+        } else if (tile.resource && !this.build.isHarvested(x, y)) {
+          used.add(oKey);
+          this.pool.acquire(oKey, p.x, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5).setOrigin(0.5, 1);
         }
       }
     }
 
-    drawables.push({
-      depth: this.player.x + this.player.y + 0.01,
-      draw: () => this.drawPlayer()
-    });
+    this.pool.flush(used);
 
-    drawables.sort((a, b) => a.depth - b.depth);
-
-    for (const drawable of drawables) {
-      drawable.draw();
-    }
-  }
-
-  private drawTerrain(x: number, y: number, tile: TileData): void {
-    const p = worldToScreen(x, y, 0);
-    const color = this.terrainColor(tile.terrain);
-
-    this.drawDiamond(p.x, p.y, color, tile.terrain === 'water' ? 0.95 : 1, 0x000000, 0.08);
-  }
-
-  private terrainColor(terrain: TileData['terrain']): number {
-    switch (terrain) {
-      case 'water': return 0x2c62b8;
-      case 'sand': return 0xd7c58a;
-      case 'grass': return 0x4a7f3c;
-      case 'stone': return 0x7f8791;
-      case 'snow': return 0xe8f1fb;
-      default: return 0x000000;
-    }
-  }
-
-  private drawDiamond(
-    topX: number,
-    topY: number,
-    color: number,
-    alpha = 1,
-    lineColor = 0x000000,
-    lineAlpha = 0
-  ): void {
-    const g = this.graphics;
-    const halfWidth = TILE_W / 2;
-    const halfHeight = TILE_H / 2;
-
-    g.fillStyle(color, alpha);
-    g.beginPath();
-    g.moveTo(topX, topY);
-    g.lineTo(topX + halfWidth, topY + halfHeight);
-    g.lineTo(topX, topY + TILE_H);
-    g.lineTo(topX - halfWidth, topY + halfHeight);
-    g.closePath();
-    g.fillPath();
-
-    if (lineAlpha > 0) {
-      g.lineStyle(1, lineColor, lineAlpha);
-      g.strokePath();
-    }
-  }
-
-  private drawResource(x: number, y: number, resource: 'tree' | 'rock'): void {
-    const p = worldToScreen(x, y, 0);
-    const centerX = p.x;
-    const centerY = p.y + TILE_H / 2;
-    const g = this.graphics;
-
-    if (resource === 'tree') {
-      g.fillStyle(0x5d4126, 1);
-      g.fillRect(centerX - 2, centerY - 16, 4, 14);
-
-      g.fillStyle(0x2f8f3f, 1);
-      g.fillCircle(centerX, centerY - 20, 10);
-    } else {
-      g.fillStyle(0x9aa2ad, 1);
-      g.fillCircle(centerX - 3, centerY - 4, 6);
-
-      g.fillStyle(0x7f8791, 1);
-      g.fillCircle(centerX + 4, centerY - 2, 5);
-    }
-  }
-
-  private drawBlock(x: number, y: number, item: ItemId): void {
-    const ground = worldToScreen(x, y, 0);
-    const top = worldToScreen(x, y, 1);
-
-    const halfWidth = TILE_W / 2;
-    const halfHeight = TILE_H / 2;
-
-    const topRight = { x: top.x + halfWidth, y: top.y + halfHeight };
-    const topBottom = { x: top.x, y: top.y + TILE_H };
-    const topLeft = { x: top.x - halfWidth, y: top.y + halfHeight };
-
-    const groundRight = { x: ground.x + halfWidth, y: ground.y + halfHeight };
-    const groundBottom = { x: ground.x, y: ground.y + TILE_H };
-    const groundLeft = { x: ground.x - halfWidth, y: ground.y + halfHeight };
-
-    const colors =
-      item === 'wood'
-        ? { top: 0xb08a54, right: 0x8c6a3f, left: 0x77572f }
-        : { top: 0xaab2bd, right: 0x828a95, left: 0x6d747d };
-
-    this.drawPoly([topRight, topBottom, groundBottom, groundRight], colors.right);
-    this.drawPoly([topLeft, topBottom, groundBottom, groundLeft], colors.left);
-    this.drawDiamond(top.x, top.y, colors.top, 1, 0x000000, 0.16);
-  }
-
-  private drawPoly(points: Array<{ x: number; y: number }>, color: number, alpha = 1): void {
-    const g = this.graphics;
-
-    g.fillStyle(color, alpha);
-    g.beginPath();
-    g.moveTo(points[0].x, points[0].y);
-
-    for (let i = 1; i < points.length; i++) {
-      g.lineTo(points[i].x, points[i].y);
-    }
-
-    g.closePath();
-    g.fillPath();
-  }
-
-  private drawPlayer(): void {
     const p = worldToScreen(this.player.x, this.player.y, 0);
-    const cx = p.x;
-    const groundY = p.y + TILE_H / 2;
-    const g = this.graphics;
-
-    g.fillStyle(0x000000, 0.25);
-    g.fillEllipse(cx, groundY + 4, 20, 9);
-
-    drawCharacter(g, cx, groundY + 6, 2.4, this.appearance);
+    this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 6);
+    this.playerSprite.setDepth(this.player.x + this.player.y + 0.5);
   }
 }
