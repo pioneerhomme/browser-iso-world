@@ -71,20 +71,20 @@ function makeBlock(
   const px = 4;
   const canvas = document.createElement('canvas');
   canvas.width = 64;
-  canvas.height = 52;
+  canvas.height = 56;
   const ctx = canvas.getContext('2d')!;
 
   const diamond = (gx: number, gy: number): number =>
     Math.abs(gx - 7.5) / 8 + Math.abs(gy - 3.5) / 4;
 
-  // 0 пусто, 1 верхняя грань, 2 левая, 3 правая
+  // 0 пусто, 1 верх, 2 лево, 3 право
   const regionAt = (gx: number, gy: number): number => {
     if (diamond(gx, gy) <= 1) return 1;
-    if (diamond(gx, gy - 5) <= 1) return gx < 8 ? 2 : 3;
+    if (diamond(gx, gy - 6) <= 1) return gx < 8 ? 2 : 3;
     return 0;
   };
 
-  for (let gy = 0; gy < 13; gy++) {
+  for (let gy = 0; gy < 14; gy++) {
     for (let gx = 0; gx < 16; gx++) {
       const region = regionAt(gx, gy);
       if (region === 0) continue;
@@ -93,7 +93,6 @@ function makeBlock(
 
       if (region === 1) {
         color = hash2(gx, gy, seed) > 0.75 ? topAlt : top;
-        // светлая кромка верхних граней — пиксельная, без сглаживания
         if (regionAt(gx, gy - 1) === 0 || regionAt(gx - 1, gy) === 0) {
           color = shade(top, 1.25);
         }
@@ -105,7 +104,6 @@ function makeBlock(
         if (regionAt(gx, gy + 1) === 0) color = shade(right, 0.7);
       }
 
-      // вертикальный шов между гранями
       if (region === 3 && regionAt(gx - 1, gy) === 2) {
         color = shade(right, 0.8);
       }
@@ -126,6 +124,20 @@ export function createBaseTextures(scene: Phaser.Scene): void {
     h: css(0x4fb35f),
     d: css(0x1e5c2b)
   }, 4);
+
+  function transposeRows(rows: string[]): string[] {
+  const h = rows.length;
+  const w = Math.max(...rows.map((r) => r.length));
+  const out: string[] = [];
+  for (let x = 0; x < w; x++) {
+    let line = '';
+    for (let y = 0; y < h; y++) {
+      line += rows[y][x] ?? '.';
+    }
+    out.push(line);
+  }
+  return out;
+}
 
   addSpriteWithShadow(scene, 'rock', ROCK_ROWS, {
     R: css(0x9aa2ad),
@@ -153,6 +165,12 @@ export function createBaseTextures(scene: Phaser.Scene): void {
   }, 3));
 
   addSpriteWithShadow(scene, 'bed', BED_ROWS, {
+    W: css(0xf2f2f2),
+    R: css(0xb0483f),
+    B: css(0x6b4a2b)
+  }, 4);
+
+    addSpriteWithShadow(scene, 'bed_v', transposeRows(BED_ROWS), {
     W: css(0xf2f2f2),
     R: css(0xb0483f),
     B: css(0x6b4a2b)

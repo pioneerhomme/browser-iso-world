@@ -24,6 +24,7 @@ export class Hud {
     this.bind('btn-bag', callbacks.onToggleInventory);
     this.bind('btn-zoom-in', callbacks.onZoomIn);
     this.bind('btn-zoom-out', callbacks.onZoomOut);
+    this.bind('btn-rotate', callbacks.onRotate);
 
     const hotbar = document.getElementById('hotbar') as HTMLDivElement;
     for (let i = 0; i < 3; i++) {

@@ -67,14 +67,14 @@ export class BuildManager {
     }
 
     if (this.topZ(x, y) >= MAX_STACK) return false;
-    if (this.getStack(x, y)[0] === 'bed') return false;
+    if ((this.getStack(x, y)[0] ?? '').startsWith('bed')) return false;
     if (this.topZ(x, y) === 0 && !this.groundOk(tile, x, y)) return false;
 
     return true;
   }
 
   place(x: number, y: number, itemId: string): boolean {
-    if (itemId === 'bed') {
+    if (itemId.startsWith('bed')) {
       if (this.topZ(x, y) !== 0) return false;
       this.placed.set(this.key3(x, y, 0), itemId);
       return true;
@@ -101,7 +101,7 @@ export class BuildManager {
     let bestD = radius;
 
     for (const [key, item] of this.placed) {
-      if (item !== 'bed') continue;
+            if (!item.startsWith('bed')) continue;
       const [bx, by] = key.split('|').map(Number);
       const d = Math.hypot(bx + 0.5 - x, by + 0.5 - y);
       if (d <= bestD) {

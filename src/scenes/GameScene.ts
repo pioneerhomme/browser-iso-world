@@ -92,6 +92,9 @@ export class GameScene extends Phaser.Scene {
   private rightHeld = false;
   private swingSprite: Phaser.GameObjects.Image | null = null;
 
+  private bedVertical = false;
+  private pendingBed: { x: number; y: number } | null = null;
+
   private saveTimer = 0;
   private clockTimer = 0;
 
@@ -116,6 +119,7 @@ export class GameScene extends Phaser.Scene {
   private keyThree?: Phaser.Input.Keyboard.Key;
   private keyInv?: Phaser.Input.Keyboard.Key;
   private keySleep?: Phaser.Input.Keyboard.Key;
+  private keyRotate?: Phaser.Input.Keyboard.Key;
 
   private onVisibility = (): void => {
     if (document.hidden) {
@@ -127,7 +131,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.inventoryOpen) return;
 
     const t = e.target as HTMLElement;
-    if (t.closest('#inv-panel') || t.closest('#hud')) return;
+    if (t.closest('#inv-panel') || t.closest('#hud') || t.closest('#sleep-modal')) return;
 
     this.toggleInventory();
     this.justClosedInventory = true;
@@ -246,6 +250,7 @@ export class GameScene extends Phaser.Scene {
       this.keyThree = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
       this.keyInv = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
       this.keySleep = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+      this.keyRotate = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T);
     }
 
     this.input.mouse?.disableContextMenu();
@@ -279,13 +284,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.buildInventoryDOM();
+    this.bindSleepModal();
 
     this.hud = new Hud({
       onTogglePlace: () => this.togglePlaceMode(),
       onToggleInventory: () => this.toggleInventory(),
       onZoomIn: () => this.adjustZoom(0.25),
       onZoomOut: () => this.adjustZoom(-0.25),
-      onSelectSlot: (i) => this.selectSlot(i)
+      onSelectSlot: (i) => this.selectSlot(i),
+      onRotate: () => this.toggleBedRotation()
     });
 
     this.updateHud();
@@ -316,6 +323,7 @@ export class GameScene extends Phaser.Scene {
     if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectSlot(1);
     if (this.keyThree && Phaser.Input.Keyboard.JustDown(this.keyThree)) this.selectSlot(2);
     if (this.keyInv && Phaser.Input.Keyboard.JustDown(this.keyInv)) this.toggleInventory();
+    if (this.keyRotate && Phaser.Input.Keyboard.JustDown(this.keyRotate)) this.toggleBedRotation();
     if (this.keySleep && Phaser.Input.Keyboard.JustDown(this.keySleep)) {
       const bed = this.build.findNearestBed(this.player.x, this.player.y, 2.5);
       if (bed) this.doSleep(false);
@@ -344,7 +352,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── сон/энергия ──
+  // ── сон и энергия ──
 
   private spendEnergy(amount: number): boolean {
     if (this.energy < amount) {
@@ -383,7 +391,46 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ── хотбар/режимы ──
+  private bindSleepModal(): void {
+    const yes = document.getElementById('sleep-yes');
+    const remove = document.getElementById('sleep-remove');
+    const cancel = document.getElementById('sleep-cancel');
+
+    if (yes) {
+      yes.addEventListener('click', () => {
+        this.closeSleepModal();
+        this.doSleep(false);
+      });
+    }
+    if (remove) {
+      remove.addEventListener('click', () => {
+        const bed = this.pendingBed;
+        this.closeSleepModal();
+        if (bed) this.tryBreak(bed.x, bed.y);
+      });
+    }
+    if (cancel) {
+      cancel.addEventListener('click', () => this.closeSleepModal());
+    }
+  }
+
+  private closeSleepModal(): void {
+    const modal = document.getElementById('sleep-modal');
+    if (modal) modal.classList.add('hidden');
+    this.pendingBed = null;
+  }
+
+  private toggleBedRotation(): void {
+    this.bedVertical = !this.bedVertical;
+    this.floatText(
+      this.player.x,
+      this.player.y,
+      this.bedVertical ? 'Кровать: вертикально' : 'Кровать: горизонтально',
+      '#ffffff'
+    );
+  }
+
+  // ── хотбар и режимы ──
 
   private selectSlot(i: number): void {
     this.selectedSlot = i;
@@ -508,6 +555,20 @@ export class GameScene extends Phaser.Scene {
 
   // ── взаимодействие ──
 
+  private inReach(x: number, y: number): boolean {
+    return Math.hypot(x + 0.5 - this.player.x, y + 0.5 - this.player.y) <= REACH;
+  }
+
+  private playerOverlapsTile(x: number, y: number): boolean {
+    const r = 0.3;
+    return (
+      x >= Math.floor(this.player.x - r) &&
+      x <= Math.floor(this.player.x + r) &&
+      y >= Math.floor(this.player.y - r) &&
+      y <= Math.floor(this.player.y + r)
+    );
+  }
+
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.rightHeld = pointer.rightButtonDown();
 
@@ -532,12 +593,11 @@ export class GameScene extends Phaser.Scene {
     if (stack.length > 0) {
       const topItem = stack[stack.length - 1];
 
-      if (topItem === 'bed') {
-        const d = Math.hypot(tilePos.x + 0.5 - this.player.x, tilePos.y + 0.5 - this.player.y);
-        if (d <= 2.5) {
-          this.doSleep(false);
-          return;
-        }
+      if (topItem === 'bed' || topItem === 'bedV') {
+        this.pendingBed = { x: tilePos.x, y: tilePos.y };
+        const modal = document.getElementById('sleep-modal');
+        if (modal) modal.classList.remove('hidden');
+        return;
       }
 
       this.tryBreak(tilePos.x, tilePos.y);
@@ -553,6 +613,7 @@ export class GameScene extends Phaser.Scene {
 
   private tryPlace(x: number, y: number): void {
     if (this.playerOverlapsTile(x, y)) return;
+
     if (!this.inReach(x, y)) {
       this.floatText(x + 0.5, y + 0.5, 'Подойди ближе', '#ff8080');
       return;
@@ -567,7 +628,9 @@ export class GameScene extends Phaser.Scene {
     const tile = WorldGen.getTile(x, y, WORLD_SEED);
     if (!this.build.canPlaceAt(tile, x, y, itemId)) return;
 
-    if (this.build.place(x, y, itemId)) {
+    const placeId = itemId === 'bed' && this.bedVertical ? 'bedV' : itemId;
+
+    if (this.build.place(x, y, placeId)) {
       this.playSwing(ITEM_DEFS[itemId].placeTexture ?? 'block_wood');
       this.inventory.remove(itemId, 1);
       this.refreshHotbar();
@@ -578,13 +641,15 @@ export class GameScene extends Phaser.Scene {
 
   private tryBreak(x: number, y: number): void {
     if (this.build.topZ(x, y) <= 0) return;
+
     if (!this.inReach(x, y)) {
       this.floatText(x + 0.5, y + 0.5, 'Подойди ближе', '#ff8080');
       return;
     }
 
-    const item = this.build.removeTop(x, y);
-    if (item) {
+    const raw = this.build.removeTop(x, y);
+    if (raw) {
+      const item = raw.startsWith('bed') ? 'bed' : raw;
       const tool = this.heldTool();
       this.playSwing(tool === 'axe' ? 'icon_axe' : tool === 'pickaxe' ? 'icon_pickaxe' : 'spark');
       this.inventory.add(item, 1);
@@ -684,20 +749,6 @@ export class GameScene extends Phaser.Scene {
 
   // ── призрак и рамка ──
 
-  private inReach(x: number, y: number): boolean {
-    return Math.hypot(x + 0.5 - this.player.x, y + 0.5 - this.player.y) <= REACH;
-  }
-
-  private playerOverlapsTile(x: number, y: number): boolean {
-    const r = 0.3;
-    return (
-      x >= Math.floor(this.player.x - r) &&
-      x <= Math.floor(this.player.x + r) &&
-      y >= Math.floor(this.player.y - r) &&
-      y <= Math.floor(this.player.y + r)
-    );
-  }
-
   private updateGhost(): void {
     const show = this.lastPointer !== null && !this.inventoryOpen && !this.sleeping;
 
@@ -733,12 +784,13 @@ export class GameScene extends Phaser.Scene {
     const z = itemId === 'bed' ? 0 : zTop;
 
     const valid =
-      this.build.canPlaceAt(tile, hx, hy, itemId) &&
-      !(Math.round(this.player.x) === hx && Math.round(this.player.y) === hy);
+      this.build.canPlaceAt(tile, hx, hy, itemId) && !this.playerOverlapsTile(hx, hy);
 
     const p = worldToScreen(hx, hy, z);
 
-    this.ghost.setTexture(def.placeTexture ?? 'block_wood');
+    this.ghost.setTexture(
+      itemId === 'bed' ? (this.bedVertical ? 'bed_v' : 'bed') : def.placeTexture ?? 'block_wood'
+    );
     this.ghost.setPosition(p.x, p.y + TILE_H);
     this.ghost.setScale(itemId === 'bed' ? 1 : BLOCK_SCALE);
     this.ghost.setDepth(1024 + hx + hy + 0.5 + z * 0.01 + 0.001);
@@ -966,7 +1018,7 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.setInfo(
       `Слот: ${selected} | Режим моб.: ${place}\n` +
-      `ЛКМ — ломать/рубить | ПКМ — поставить | 1-3 — слоты | I — крафт | E — спать\n` +
+      `ЛКМ — ломать/рубить | ПКМ — поставить | 1-3 — слоты | I — крафт | E — спать | T — поворот кровати\n` +
       `Зум: ${this.zoom.toFixed(2)}`
     );
   }
@@ -1036,8 +1088,8 @@ export class GameScene extends Phaser.Scene {
         if (stack.length > 0) {
           stack.forEach((item, z) => {
             const def = ITEM_DEFS[item];
-            const tex = def?.placeTexture ?? 'block_wood';
-            const scale = item === 'bed' ? 1 : BLOCK_SCALE;
+            const tex = item === 'bedV' ? 'bed_v' : def?.placeTexture ?? 'block_wood';
+            const scale = item.startsWith('bed') ? 1 : BLOCK_SCALE;
 
             const oKey = `o${x}|${y}|${z}`;
             used.add(oKey);
