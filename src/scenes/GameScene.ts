@@ -464,20 +464,17 @@ export class GameScene extends Phaser.Scene {
     const used = new Set<string>();
     const cam = this.cameras.main;
 
-    // радиус рендера по экрану и зуму, с потолком
+    // радиус рендера: корректная изометрическая оценка видимой области
     const need =
       Math.ceil(
-        Math.max(
-          cam.width / (this.zoom * TILE_W),
-          cam.height / (this.zoom * TILE_H)
-        )
+        (cam.width / (this.zoom * TILE_W) + cam.height / (this.zoom * TILE_H)) / 2
       ) + 4;
     const R = Math.min(need, RENDER_RADIUS_MAX);
 
     const pcx = Math.round(this.player.x);
     const pcy = Math.round(this.player.y);
 
-    // ── чанки земли: постепенная подгрузка, ближайшие к игроку — первыми ──
+    // ── чанки земли (глубина 0 — всегда снизу) ──
     const cMinX = Math.floor((pcx - R) / CHUNK);
     const cMaxX = Math.floor((pcx + R) / CHUNK);
     const cMinY = Math.floor((pcy - R) / CHUNK);
@@ -498,7 +495,7 @@ export class GameScene extends Phaser.Scene {
       const texKey = `chunk_${c.cx}_${c.cy}`;
 
       if (!this.textures.exists(texKey)) {
-        if (budget <= 0) continue; // дорисуется в следующих кадрах
+        if (budget <= 0) continue;
         budget--;
         getChunkTexture(this, c.cx, c.cy);
       }
@@ -510,7 +507,15 @@ export class GameScene extends Phaser.Scene {
       this.chunkLastUsed.set(texKey, this.time.now);
     }
 
-    // ── объекты (деревья, камни, постройки) в том же радиусе ──
+    // экранные координаты центра тела игрока — для «прояснения» деревьев
+    const pp = worldToScreen(this.player.x, this.player.y, 0);
+    const playerSX = pp.x;
+    const playerSY = pp.y + TILE_H / 2 - 24;
+    const playerDepthSum = this.player.x + this.player.y;
+
+    // ── объекты: глубина со сдвигом +1024, чтобы не было отрицательных ──
+    const DEPTH_OFFSET = 1024;
+
     for (let y = pcy - R; y <= pcy + R; y++) {
       for (let x = pcx - R; x <= pcx + R; x++) {
         const tile = WorldGen.getTile(x, y, WORLD_SEED);
@@ -523,18 +528,19 @@ export class GameScene extends Phaser.Scene {
             used.add(oKey);
             const sp = worldToScreen(x, y, z);
             this.pool
-              .acquire(oKey, sp.x, sp.y + TILE_H, 'block_' + item, x + y + 0.5 + z * 0.01)
+              .acquire(oKey, sp.x, sp.y + TILE_H, 'block_' + item, DEPTH_OFFSET + x + y + 0.5 + z * 0.01)
               .setOrigin(0.5, 1)
-              .setScale(BLOCK_SCALE);
+              .setScale(BLOCK_SCALE)
+              .setAlpha(1);
           });
         } else if (tile.resource && !this.build.isHarvested(x, y)) {
           const oKey = `o${x}|${y}|0`;
           used.add(oKey);
 
-          const scale =
-            tile.resource === 'tree'
-              ? Phaser.Math.Linear(TREE_MIN, TREE_MAX, hash2(x, y, 991))
-              : Phaser.Math.Linear(ROCK_MIN, ROCK_MAX, hash2(x, y, 992));
+          const isTree = tile.resource === 'tree';
+          const scale = isTree
+            ? Phaser.Math.Linear(TREE_MIN, TREE_MAX, hash2(x, y, 991))
+            : Phaser.Math.Linear(ROCK_MIN, ROCK_MAX, hash2(x, y, 992));
 
           let ox = 0;
           const ht = this.hitTimes.get(oKey);
@@ -548,17 +554,36 @@ export class GameScene extends Phaser.Scene {
           }
 
           const p = worldToScreen(x, y, 0);
+
+          // дерево, закрывающее игрока, становится полупрозрачным
+          let alpha = 1;
+          if (x + y >= Math.floor(playerDepthSum)) {
+            const halfW = (isTree ? 24 : 20) * scale;
+            const fullH = (isTree ? 56 : 24) * scale;
+            const bottomY = p.y + TILE_H;
+
+            if (
+              playerSX > p.x + ox - halfW &&
+              playerSX < p.x + ox + halfW &&
+              playerSY > bottomY - fullH &&
+              playerSY < bottomY
+            ) {
+              alpha = 0.35;
+            }
+          }
+
           this.pool
-            .acquire(oKey, p.x + ox, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5)
+            .acquire(oKey, p.x + ox, p.y + TILE_H, isTree ? 'tree' : 'rock', DEPTH_OFFSET + x + y + 0.5)
             .setOrigin(0.5, 1)
-            .setScale(scale);
+            .setScale(scale)
+            .setAlpha(alpha);
         }
       }
     }
 
     this.pool.flush(used);
 
-    // ── выгрузка чанков, которые не видим 15+ секунд ──
+    // ── выгрузка старых чанков ──
     this.evictTimer++;
     if (this.evictTimer >= 300) {
       this.evictTimer = 0;
@@ -573,6 +598,6 @@ export class GameScene extends Phaser.Scene {
 
     const p = worldToScreen(this.player.x, this.player.y, 0);
     this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 4);
-    this.playerSprite.setDepth(this.player.x + this.player.y + 0.5);
+    this.playerSprite.setDepth(DEPTH_OFFSET + this.player.x + this.player.y + 0.5);
   }
 }
