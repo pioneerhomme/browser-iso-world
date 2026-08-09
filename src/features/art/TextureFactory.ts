@@ -35,6 +35,30 @@ function addSpriteWithShadow(
   addTexture(scene, key, canvas);
 }
 
+function addOutlineTexture(scene: Phaser.Scene, key: string, rows: string[], px: number): void {
+  const w = Math.max(...rows.map((r) => r.length));
+  const canvas = document.createElement('canvas');
+  canvas.width = w * px;
+  canvas.height = rows.length * px + 4;
+  const ctx = canvas.getContext('2d')!;
+
+  const solid = (x: number, y: number): boolean =>
+    y >= 0 && y < rows.length && x >= 0 && x < rows[y].length && rows[y][x] !== '.';
+
+  ctx.fillStyle = '#ffef9f';
+
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      if (!solid(x, y)) continue;
+      if (!solid(x + 1, y) || !solid(x - 1, y) || !solid(x, y + 1) || !solid(x, y - 1)) {
+        ctx.fillRect(x * px, y * px, px, px);
+      }
+    }
+  }
+
+  addTexture(scene, key, canvas);
+}
+
 function makeBlock(
   scene: Phaser.Scene,
   key: string,
@@ -69,7 +93,6 @@ function makeBlock(
     }
   }
 
-  // фаски для объёма
   ctx.lineWidth = 1;
 
   ctx.strokeStyle = css(shade(top, 1.3));
@@ -116,6 +139,9 @@ export function createBaseTextures(scene: Phaser.Scene): void {
     h: css(0xc4ccd6),
     d: css(0x5d646d)
   }, 4);
+
+  addOutlineTexture(scene, 'outline_tree', TREE_ROWS, 4);
+  addOutlineTexture(scene, 'outline_rock', ROCK_ROWS, 4);
 
   makeBlock(scene, 'block_wood', 0xb08a54, 0xa37f4a, 0x8c6a3f, 0x77572f, 71);
   makeBlock(scene, 'block_stone', 0xb7bec8, 0xaab2bd, 0x828a95, 0x6d747d, 72);

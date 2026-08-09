@@ -66,6 +66,8 @@ export class GameScene extends Phaser.Scene {
   private chunkLastUsed = new Map<string, number>();
   private evictTimer = 0;
 
+  private hoverTarget: { x: number; y: number } | null = null;
+
   private buildMode = false;
   private removeMode = false;
   private selectedItem: ItemId = 'wood';
@@ -151,6 +153,13 @@ export class GameScene extends Phaser.Scene {
       this.onPointerDown(pointer);
     });
 
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.pointerType === 'mouse') {
+        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+        this.hoverTarget = this.findResourceTarget(world.x, world.y);
+      }
+    });
+
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
       this.adjustZoom(dy > 0 ? -0.15 : 0.15);
     });
@@ -201,6 +210,39 @@ export class GameScene extends Phaser.Scene {
       this.saveTimer = 0;
       this.persist();
     }
+  }
+
+  // ── поиск цели рубки по габаритам спрайта ──
+  private findResourceTarget(wx: number, wy: number): { x: number; y: number } | null {
+    const direct = screenToWorld(wx, wy, 0);
+
+    let best: { x: number; y: number; d: number } | null = null;
+
+    for (let y = direct.y - 2; y <= direct.y + 18; y++) {
+      for (let x = direct.x - 18; x <= direct.x + 18; x++) {
+        const tile = WorldGen.getTile(x, y, WORLD_SEED);
+        if (!tile.resource || this.build.isHarvested(x, y)) continue;
+
+        const isTree = tile.resource === 'tree';
+        const scale = isTree
+          ? Phaser.Math.Linear(TREE_MIN, TREE_MAX, hash2(x, y, 991))
+          : Phaser.Math.Linear(ROCK_MIN, ROCK_MAX, hash2(x, y, 992));
+
+        const p = worldToScreen(x, y, 0);
+        const halfW = (isTree ? 24 : 20) * scale;
+        const fullH = (isTree ? 56 : 24) * scale;
+        const bottom = p.y + TILE_H;
+
+        if (wx >= p.x - halfW && wx <= p.x + halfW && wy >= bottom - fullH && wy <= bottom) {
+          const d = x + y;
+          if (!best || d > best.d) {
+            best = { x, y, d };
+          }
+        }
+      }
+    }
+
+    return best ? { x: best.x, y: best.y } : null;
   }
 
   private adjustZoom(delta: number): void {
@@ -328,8 +370,14 @@ export class GameScene extends Phaser.Scene {
 
     if (this.buildMode) {
       this.tryPlace(tilePos.x, tilePos.y);
-    } else {
-      this.tryHarvest(tilePos.x, tilePos.y);
+      return;
+    }
+
+    // рубка: цель ищем по спрайту, а не по тайлу под курсором
+    const target = this.findResourceTarget(world.x, world.y);
+    this.hoverTarget = target;
+    if (target) {
+      this.tryHarvest(target.x, target.y);
     }
   }
 
@@ -405,6 +453,11 @@ export class GameScene extends Phaser.Scene {
       this.hitTimes.delete(oKey);
       this.build.harvest(x, y, tile, this.inventory);
       this.floatText(x + 0.5, y + 0.5, tile.resource === 'tree' ? '+3 дерева' : '+3 камня', '#9ff09a');
+
+      if (this.hoverTarget && this.hoverTarget.x === x && this.hoverTarget.y === y) {
+        this.hoverTarget = null;
+      }
+
       this.updateHud();
       this.persist();
     } else {
@@ -462,7 +515,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.setInfo(
       `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')} | Зум: ${this.zoom.toFixed(2)}\n` +
       `Инструменты: ${this.tools.map((t) => TOOL_LABELS[t]).join(', ')}\n` +
-      `Режим: ${mode} | Материал: ${selected} | Дерево рубим топором (3 удара), камень киркой\n` +
+      `Режим: ${mode} | Материал: ${selected} | Клик по кроне/камню рубит цель\n` +
       `ПК: WASD, ЛКМ, ПКМ — снос, колесико — зум, B/R/X/1/2`
     );
   }
@@ -568,13 +621,13 @@ export class GameScene extends Phaser.Scene {
           if (x + y >= Math.floor(playerDepthSum)) {
             const halfW = (isTree ? 24 : 20) * scale;
             const fullH = (isTree ? 56 : 24) * scale;
-            const bottomY = p.y + TILE_H;
+            const bottom = p.y + TILE_H;
 
             if (
               playerSX > p.x + ox - halfW &&
               playerSX < p.x + ox + halfW &&
-              playerSY > bottomY - fullH &&
-              playerSY < bottomY
+              playerSY > bottom - fullH &&
+              playerSY < bottom
             ) {
               alpha = 0.35;
             }
@@ -585,6 +638,17 @@ export class GameScene extends Phaser.Scene {
             .setOrigin(0.5, 1)
             .setScale(scale)
             .setAlpha(alpha);
+
+          // обводка цели (ховер мыши / последний тап)
+          if (this.hoverTarget && this.hoverTarget.x === x && this.hoverTarget.y === y) {
+            const hKey = 'h' + x + '|' + y;
+            used.add(hKey);
+            this.pool
+              .acquire(hKey, p.x + ox, p.y + TILE_H, isTree ? 'outline_tree' : 'outline_rock', DEPTH_OFFSET + x + y + 0.6)
+              .setOrigin(0.5, 1)
+              .setScale(scale)
+              .setAlpha(1);
+          }
         }
       }
     }
