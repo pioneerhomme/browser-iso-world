@@ -97,6 +97,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.children.removeAll(true);
     const savedAppearance = this.registry.get('appearance');
     if (savedAppearance) {
       this.appearance = savedAppearance as Appearance;
@@ -503,7 +504,11 @@ export class GameScene extends Phaser.Scene {
       const p = worldToScreen(c.cx * CHUNK, c.cy * CHUNK, 0);
       const cKey = 'c' + c.cx + '|' + c.cy;
       used.add(cKey);
-      this.pool.acquire(cKey, p.x - CHUNK_OFF_X, p.y, texKey, 0).setOrigin(0, 0);
+        this.pool
+        .acquire(cKey, p.x - CHUNK_OFF_X, p.y, texKey, 0)
+        .setOrigin(0, 0)
+        .setScale(1)
+        .setAlpha(1);
       this.chunkLastUsed.set(texKey, this.time.now);
     }
 
