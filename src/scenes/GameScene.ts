@@ -86,6 +86,11 @@ export class GameScene extends Phaser.Scene {
   private placeMode = false;
   private selectedSlot = 0;
 
+  // призрачный превью-блок
+  private ghost!: Phaser.GameObjects.Image;
+  private ghostCell!: Phaser.GameObjects.Image;
+  private lastPointer: { x: number; y: number } | null = null;
+
   private saveTimer = 0;
   private clockTimer = 0;
 
@@ -174,6 +179,36 @@ export class GameScene extends Phaser.Scene {
     this.nightOverlay.setDepth(4000);
     this.nightOverlay.setAlpha(darknessAlpha(this.timeMin));
 
+    // текстура-рамка клетки
+    if (!this.textures.exists('cell_highlight')) {
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 32;
+      const ctx = c.getContext('2d')!;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(32, 1);
+      ctx.lineTo(62, 16);
+      ctx.lineTo(32, 31);
+      ctx.lineTo(2, 16);
+      ctx.closePath();
+      ctx.stroke();
+
+      const t = this.textures.addCanvas('cell_highlight', c);
+      if (t) t.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+
+    this.ghostCell = this.add.image(0, 0, 'cell_highlight');
+    this.ghostCell.setOrigin(0.5, 0);
+    this.ghostCell.setAlpha(0.4);
+    this.ghostCell.setVisible(false);
+
+    this.ghost = this.add.image(0, 0, 'block_wood');
+    this.ghost.setOrigin(0.5, 1);
+    this.ghost.setAlpha(0.5);
+    this.ghost.setVisible(false);
+
     const keyboard = this.input.keyboard;
 
     if (keyboard) {
@@ -199,6 +234,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      this.lastPointer = { x: pointer.x, y: pointer.y };
       const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.hoverTarget = this.findResourceTarget(world.x, world.y);
     });
@@ -272,6 +308,7 @@ export class GameScene extends Phaser.Scene {
 
     this.updateCamera();
     this.renderWorld();
+    this.updateGhost();
     this.updateWalkAnimation(dt);
 
     this.saveTimer += dt;
@@ -467,6 +504,47 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.floatText(x + 0.5, y + 0.5, `${hits}/${HITS_REQUIRED}`, '#ffffff');
     }
+  }
+
+    // ── призрак перед установкой ──
+
+  private updateGhost(): void {
+    const show = this.lastPointer !== null && !this.inventoryOpen && !this.sleeping;
+
+    if (!show) {
+      this.ghost.setVisible(false);
+      this.ghostCell.setVisible(false);
+      return;
+    }
+
+    const world = this.cameras.main.getWorldPoint(this.lastPointer!.x, this.lastPointer!.y);
+    const tilePos = screenToWorld(world.x, world.y, 0);
+    const hx = tilePos.x;
+    const hy = tilePos.y;
+
+    const itemId = HOTBAR_ITEMS[this.selectedSlot];
+    const def = ITEM_DEFS[itemId];
+    const tile = WorldGen.getTile(hx, hy, WORLD_SEED);
+
+    const z = itemId === 'bed' ? 0 : this.build.topZ(hx, hy);
+
+    const valid =
+      this.build.canPlaceAt(tile, hx, hy, itemId) &&
+      this.inventory.get(itemId) > 0 &&
+      !(Math.round(this.player.x) === hx && Math.round(this.player.y) === hy);
+
+    const p = worldToScreen(hx, hy, z);
+
+    this.ghostCell.setPosition(p.x, p.y);
+    this.ghostCell.setDepth(1024 + hx + hy + 0.4);
+    this.ghostCell.setVisible(true);
+
+    this.ghost.setTexture(def.placeTexture ?? 'block_wood');
+    this.ghost.setPosition(p.x, p.y + TILE_H);
+    this.ghost.setScale(itemId === 'bed' ? 1 : BLOCK_SCALE);
+    this.ghost.setDepth(1024 + hx + hy + 0.5 + z * 0.01 + 0.001);
+    this.ghost.setTint(valid ? 0x69f0ae : 0xff5555);
+    this.ghost.setVisible(true);
   }
 
   // ── инвентарь + крафт ──
