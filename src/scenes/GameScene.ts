@@ -170,6 +170,24 @@ export class GameScene extends Phaser.Scene {
       this.build.place(2, 2, 'bed');
     }
 
+    // если игрок заперт блоками — переставить на ближайшую свободную клетку
+    if (!this.canStandAt(this.player.x, this.player.y)) {
+      const baseX = Math.floor(this.player.x);
+      const baseY = Math.floor(this.player.y);
+
+      outer: for (let rad = 1; rad < 8; rad++) {
+        for (let dy = -rad; dy <= rad; dy++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (this.isWalkableTile(baseX + dx, baseY + dy)) {
+              this.player.x = baseX + dx + 0.5;
+              this.player.y = baseY + dy + 0.5;
+              break outer;
+            }
+          }
+        }
+      }
+    }
+
     this.pool = new SpritePool(this);
 
     this.playerSprite = this.add.image(0, 0, getHeroTexture(this, this.appearance, 'down', 0, this.heldTool()));
@@ -534,7 +552,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryPlace(x: number, y: number): void {
-    if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) return;
+    if (this.playerOverlapsTile(x, y)) return;
     if (!this.inReach(x, y)) {
       this.floatText(x + 0.5, y + 0.5, 'Подойди ближе', '#ff8080');
       return;
@@ -668,6 +686,16 @@ export class GameScene extends Phaser.Scene {
 
   private inReach(x: number, y: number): boolean {
     return Math.hypot(x + 0.5 - this.player.x, y + 0.5 - this.player.y) <= REACH;
+  }
+
+  private playerOverlapsTile(x: number, y: number): boolean {
+    const r = 0.3;
+    return (
+      x >= Math.floor(this.player.x - r) &&
+      x <= Math.floor(this.player.x + r) &&
+      y >= Math.floor(this.player.y - r) &&
+      y <= Math.floor(this.player.y + r)
+    );
   }
 
   private updateGhost(): void {

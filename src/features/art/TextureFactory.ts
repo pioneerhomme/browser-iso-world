@@ -77,49 +77,43 @@ function makeBlock(
   const diamond = (gx: number, gy: number): number =>
     Math.abs(gx - 7.5) / 8 + Math.abs(gy - 3.5) / 4;
 
+  // 0 пусто, 1 верхняя грань, 2 левая, 3 правая
+  const regionAt = (gx: number, gy: number): number => {
+    if (diamond(gx, gy) <= 1) return 1;
+    if (diamond(gx, gy - 5) <= 1) return gx < 8 ? 2 : 3;
+    return 0;
+  };
+
   for (let gy = 0; gy < 13; gy++) {
     for (let gx = 0; gx < 16; gx++) {
-      let color: number | null = null;
+      const region = regionAt(gx, gy);
+      if (region === 0) continue;
 
-      if (diamond(gx, gy) <= 1) {
+      let color: number;
+
+      if (region === 1) {
         color = hash2(gx, gy, seed) > 0.75 ? topAlt : top;
-      } else if (diamond(gx, gy - 5) <= 1) {
-        color = gx < 8 ? left : right;
+        // светлая кромка верхних граней — пиксельная, без сглаживания
+        if (regionAt(gx, gy - 1) === 0 || regionAt(gx - 1, gy) === 0) {
+          color = shade(top, 1.25);
+        }
+      } else if (region === 2) {
+        color = hash2(gx, gy, seed) > 0.75 ? shade(left, 0.9) : left;
+        if (regionAt(gx, gy + 1) === 0) color = shade(left, 0.7);
+      } else {
+        color = hash2(gx, gy, seed) > 0.75 ? shade(right, 0.9) : right;
+        if (regionAt(gx, gy + 1) === 0) color = shade(right, 0.7);
       }
 
-      if (color === null) continue;
+      // вертикальный шов между гранями
+      if (region === 3 && regionAt(gx - 1, gy) === 2) {
+        color = shade(right, 0.8);
+      }
+
       ctx.fillStyle = css(color);
       ctx.fillRect(gx * px, gy * px, px, px);
     }
   }
-
-  ctx.lineWidth = 1;
-
-  ctx.strokeStyle = css(shade(top, 1.15));
-  ctx.beginPath();
-  ctx.moveTo(0, 16);
-  ctx.lineTo(32, 0);
-  ctx.lineTo(64, 16);
-  ctx.stroke();
-
-  ctx.strokeStyle = css(shade(top, 0.75));
-  ctx.beginPath();
-  ctx.moveTo(0, 16);
-  ctx.lineTo(32, 32);
-  ctx.lineTo(64, 16);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath();
-  ctx.moveTo(0, 36);
-  ctx.lineTo(32, 52);
-  ctx.lineTo(64, 36);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(32, 32);
-  ctx.lineTo(32, 52);
-  ctx.stroke();
 
   addTexture(scene, key, canvas);
 }
