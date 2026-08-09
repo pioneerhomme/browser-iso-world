@@ -27,11 +27,24 @@ export class CharacterScene extends Phaser.Scene {
 
   private dynamic: Phaser.GameObjects.Container[] = [];
 
+    private onScaleResize = (): void => {
+    this.time.delayedCall(150, () => {
+      this.scene.restart();
+    });
+  };
+
   constructor() {
     super('CharacterScene');
   }
 
   create(): void {
+    this.dynamic = [];
+
+    this.scale.on('resize', this.onScaleResize);
+    this.events.once('shutdown', () => {
+      this.scale.off('resize', this.onScaleResize);
+    });
+
     const w = this.scale.width;
     const h = this.scale.height;
 
@@ -110,7 +123,11 @@ export class CharacterScene extends Phaser.Scene {
     this.previewX = Math.max(90, w * 0.22);
     this.previewFeetY = topH * 0.92;
     this.previewScale = Math.max(4, Math.min(7, Math.floor(topH / 60)));
-    this.previewImage = this.add.image(this.previewX, this.previewFeetY, '__DEFAULT');
+        this.previewImage = this.add.image(
+      this.previewX,
+      this.previewFeetY,
+      getCharacterTexture(this, this.state.appearance(), 0)
+    );
     this.previewImage.setOrigin(0.5, 1);
 
     // слоты
