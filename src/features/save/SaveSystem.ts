@@ -9,7 +9,7 @@ export interface SaveData {
   equipped: Record<EquipmentSlot, string | null>;
   equipmentInventory: string[];
   resources: Partial<Record<ItemId, number>>;
-  placed: Record<string, ItemId>;
+  placed: Record<string, string>;
   harvested: Record<string, number>;
   player: { x: number; y: number };
   zoom: number;
