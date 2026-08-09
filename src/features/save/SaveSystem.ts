@@ -1,5 +1,6 @@
 import { ItemId } from '../../core/types';
 import { EquipmentSlot } from '../equipment/types';
+import { ToolId } from '../tools/ToolsSystem';
 
 export interface SaveData {
   version: number;
@@ -11,11 +12,12 @@ export interface SaveData {
   harvested: Record<string, number>;
   player: { x: number; y: number };
   zoom: number;
+  tools: ToolId[];
   savedAt: number;
 }
 
 const KEY = 'browser-iso-world-save';
-const VERSION = 2;
+const VERSION = 3;
 
 export function defaultSave(): SaveData {
   return {
@@ -28,6 +30,7 @@ export function defaultSave(): SaveData {
     harvested: {},
     player: { x: 0, y: 0 },
     zoom: 1.5,
+    tools: ['axe', 'pickaxe'],
     savedAt: 0
   };
 }

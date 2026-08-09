@@ -25,6 +25,8 @@ import { Appearance } from '../features/equipment/types';
 import { getCharacterTexture } from '../features/art/TextureFactory';
 import { SaveSystem } from '../features/save/SaveSystem';
 import { SpritePool } from '../features/render/SpritePool';
+import { ToolId, TOOL_FOR_RESOURCE, TOOL_LABELS, STARTER_TOOLS } from '../features/tools/ToolsSystem';
+import { HarvestProgress, HITS_REQUIRED } from '../features/harvest/HarvestProgress';
 
 export class GameScene extends Phaser.Scene {
   private hud!: Hud;
@@ -33,6 +35,9 @@ export class GameScene extends Phaser.Scene {
   private inventory!: Inventory;
   private build = new BuildManager();
   private crafting!: CraftingSystem;
+  private harvestProgress = new HarvestProgress();
+
+  private tools: ToolId[] = [...STARTER_TOOLS];
 
   private player = {
     x: 0,
@@ -53,6 +58,9 @@ export class GameScene extends Phaser.Scene {
   private moving = false;
 
   private zoom = DEFAULT_ZOOM;
+  private targetZoom = DEFAULT_ZOOM;
+
+  private hitTimes = new Map<string, number>();
 
   private buildMode = false;
   private removeMode = false;
@@ -99,6 +107,12 @@ export class GameScene extends Phaser.Scene {
       this.player.x = save.player.x;
       this.player.y = save.player.y;
       this.zoom = save.zoom;
+      this.targetZoom = save.zoom;
+
+      const savedTools = (save.tools ?? []).filter((t) => t === 'axe' || t === 'pickaxe');
+      if (savedTools.length > 0) {
+        this.tools = savedTools;
+      }
     }
 
     this.pool = new SpritePool(this);
@@ -164,7 +178,18 @@ export class GameScene extends Phaser.Scene {
     if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) this.selectItem('wood');
     if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectItem('stone');
 
+    // плавный зум, точка привязки — персонаж (камера центрирована на нём)
+    if (Math.abs(this.targetZoom - this.zoom) > 0.001) {
+      this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dt * 10);
+    } else {
+      this.zoom = this.targetZoom;
+    }
+
     this.updateMovement(dt);
+
+    // не даём дереву вырасти под ногами игрока
+    this.build.deferRegrowth(Math.floor(this.player.x), Math.floor(this.player.y));
+
     this.updateCamera();
     this.renderWorld();
     this.updateWalkAnimation(dt);
@@ -177,7 +202,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private adjustZoom(delta: number): void {
-    this.zoom = Phaser.Math.Clamp(this.zoom + delta, MIN_ZOOM, MAX_ZOOM);
+    this.targetZoom = Phaser.Math.Clamp(this.targetZoom + delta, MIN_ZOOM, MAX_ZOOM);
   }
 
   private persist(): void {
@@ -188,8 +213,32 @@ export class GameScene extends Phaser.Scene {
       placed: world.placed,
       harvested: world.harvested,
       player: { x: this.player.x, y: this.player.y },
-      zoom: this.zoom
+      zoom: this.targetZoom,
+      tools: this.tools
     });
+  }
+
+  // ── коллизии ──────────────────────────────────────────────
+
+  private isWalkableTile(tx: number, ty: number): boolean {
+    const tile = WorldGen.getTile(tx, ty, WORLD_SEED);
+
+    if (tile.terrain === 'water') return false;
+    if (this.build.topZ(tx, ty) > 0) return false;
+    if (tile.resource && !this.build.isHarvested(tx, ty)) return false;
+
+    return true;
+  }
+
+  private canStandAt(x: number, y: number): boolean {
+    const r = 0.3;
+
+    return (
+      this.isWalkableTile(Math.floor(x - r), Math.floor(y - r)) &&
+      this.isWalkableTile(Math.floor(x + r), Math.floor(y - r)) &&
+      this.isWalkableTile(Math.floor(x - r), Math.floor(y + r)) &&
+      this.isWalkableTile(Math.floor(x + r), Math.floor(y + r))
+    );
   }
 
   private updateMovement(dt: number): void {
@@ -218,10 +267,20 @@ export class GameScene extends Phaser.Scene {
     this.moving = length > 0;
 
     if (this.moving) {
-      this.player.x += (dx / length) * this.player.speed * dt;
-      this.player.y += (dy / length) * this.player.speed * dt;
+      const stepX = (dx / length) * this.player.speed * dt;
+      const stepY = (dy / length) * this.player.speed * dt;
+
+      // раздельные оси → скольжение вдоль препятствий
+      if (this.canStandAt(this.player.x + stepX, this.player.y)) {
+        this.player.x += stepX;
+      }
+      if (this.canStandAt(this.player.x, this.player.y + stepY)) {
+        this.player.y += stepY;
+      }
     }
   }
+
+  // ── остальное ─────────────────────────────────────────────
 
   private updateWalkAnimation(dt: number): void {
     if (this.moving) {
@@ -320,11 +379,70 @@ export class GameScene extends Phaser.Scene {
 
   private tryHarvest(x: number, y: number): void {
     const tile = WorldGen.getTile(x, y, WORLD_SEED);
+    if (!tile.resource || this.build.isHarvested(x, y)) return;
 
-    if (this.build.harvest(x, y, tile, this.inventory)) {
+    const tool = TOOL_FOR_RESOURCE[tile.resource];
+
+    if (!this.tools.includes(tool)) {
+      this.floatText(x + 0.5, y + 0.5, 'Нужен: ' + TOOL_LABELS[tool], '#ff8080');
+      return;
+    }
+
+    const oKey = `o${x}|${y}|0`;
+    this.hitTimes.set(oKey, this.time.now);
+    this.spawnHitFx(x, y);
+
+    const hits = this.harvestProgress.hit(x, y);
+
+    if (hits >= HITS_REQUIRED) {
+      this.harvestProgress.clear(x, y);
+      this.hitTimes.delete(oKey);
+      this.build.harvest(x, y, tile, this.inventory);
+      this.floatText(x + 0.5, y + 0.5, tile.resource === 'tree' ? '+3 дерева' : '+3 камня', '#9ff09a');
       this.updateHud();
       this.persist();
+    } else {
+      this.floatText(x + 0.5, y + 0.5, `${hits}/${HITS_REQUIRED}`, '#ffffff');
     }
+  }
+
+  private spawnHitFx(x: number, y: number): void {
+    const p = worldToScreen(x, y, 0);
+
+    for (let i = 0; i < 3; i++) {
+      const s = this.add.image(
+        p.x + Phaser.Math.Between(-8, 8),
+        p.y + Phaser.Math.Between(-16, 0),
+        'spark'
+      );
+      s.setDepth(9000);
+
+      this.tweens.add({
+        targets: s,
+        y: s.y + 14,
+        alpha: 0,
+        duration: 300,
+        delay: i * 30,
+        onComplete: () => s.destroy()
+      });
+    }
+  }
+
+  private floatText(worldX: number, worldY: number, msg: string, color: string): void {
+    const p = worldToScreen(worldX, worldY, 0);
+
+    const t = this.add
+      .text(p.x, p.y - 40, msg, { fontSize: '12px', color })
+      .setDepth(10000)
+      .setOrigin(0.5, 1);
+
+    this.tweens.add({
+      targets: t,
+      y: t.y - 24,
+      alpha: 0,
+      duration: 600,
+      onComplete: () => t.destroy()
+    });
   }
 
   private updateHud(): void {
@@ -337,9 +455,9 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.setInfo(
       `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')} | Зум: ${this.zoom.toFixed(2)}\n` +
-      `Режим: ${mode} | Материал: ${selected}\n` +
-      `ПК: WASD, ЛКМ — действие, ПКМ — снос, колесико — зум, B/R/X/1/2\n` +
-      `Мобильный: кнопки внизу, ± — зум`
+      `Инструменты: ${this.tools.map((t) => TOOL_LABELS[t]).join(', ')}\n` +
+      `Режим: ${mode} | Материал: ${selected} | Дерево рубим топором (3 удара), камень киркой\n` +
+      `ПК: WASD, ЛКМ, ПКМ — снос, колесико — зум, B/R/X/1/2`
     );
   }
 
@@ -347,7 +465,6 @@ export class GameScene extends Phaser.Scene {
     const used = new Set<string>();
     const cam = this.cameras.main;
 
-    // видимая область в мировых координатах
     const corners = [
       screenToWorld(cam.scrollX, cam.scrollY),
       screenToWorld(cam.scrollX + cam.width / this.zoom, cam.scrollY),
@@ -357,7 +474,7 @@ export class GameScene extends Phaser.Scene {
 
     const minX = Math.min(...corners.map((c) => c.x)) - 2;
     const maxX = Math.max(...corners.map((c) => c.x)) + 2;
-    const minY = Math.min(...corners.map((c) => c.y)) - 10; // запас на высоту деревьев
+    const minY = Math.min(...corners.map((c) => c.y)) - 10;
     const maxY = Math.max(...corners.map((c) => c.y)) + 2;
 
     for (let y = minY; y <= maxY; y++) {
@@ -393,8 +510,19 @@ export class GameScene extends Phaser.Scene {
               ? Phaser.Math.Linear(TREE_MIN, TREE_MAX, hash2(x, y, 991))
               : Phaser.Math.Linear(ROCK_MIN, ROCK_MAX, hash2(x, y, 992));
 
+          let ox = 0;
+          const ht = this.hitTimes.get(oKey);
+          if (ht !== undefined) {
+            const age = this.time.now - ht;
+            if (age < 250) {
+              ox = Math.sin(age / 25) * 2;
+            } else {
+              this.hitTimes.delete(oKey);
+            }
+          }
+
           this.pool
-            .acquire(oKey, p.x, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5)
+            .acquire(oKey, p.x + ox, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5)
             .setOrigin(0.5, 1)
             .setScale(scale);
         }

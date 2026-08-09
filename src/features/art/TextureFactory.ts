@@ -102,6 +102,7 @@ export function createBaseTextures(scene: Phaser.Scene): void {
 
   makeBlock(scene, 'block_wood', 0xb08a54, 0xa37f4a, 0x8c6a3f, 0x77572f, 71);
   makeBlock(scene, 'block_stone', 0xb7bec8, 0xaab2bd, 0x828a95, 0x6d747d, 72);
+  addTexture(scene, 'spark', canvasFromPixelMap(['11', '11'], { '1': '#ffe9a8' }, 2));
 }
 
 export function getCharacterTexture(

@@ -3,6 +3,7 @@ import { Inventory } from '../inventory/Inventory';
 import { MAX_STACK } from '../../core/constants';
 
 const REGROW_MS = 90_000;
+const YIELD = 3;
 
 export class BuildManager {
   private placed = new Map<string, ItemId>();
@@ -44,6 +45,13 @@ export class BuildManager {
     return true;
   }
 
+  deferRegrowth(x: number, y: number): void {
+    const k = this.key2(x, y);
+    if (this.harvested.has(k)) {
+      this.harvested.set(k, Date.now());
+    }
+  }
+
   canPlaceAt(tile: TileData, x: number, y: number): boolean {
     if (this.topZ(x, y) > 0) return true;
     if (tile.terrain === 'water') return false;
@@ -77,9 +85,9 @@ export class BuildManager {
     this.harvested.set(k, Date.now());
 
     if (tile.resource === 'tree') {
-      inventory.add('wood', 2);
+      inventory.add('wood', YIELD);
     } else {
-      inventory.add('stone', 2);
+      inventory.add('stone', YIELD);
     }
 
     return true;
