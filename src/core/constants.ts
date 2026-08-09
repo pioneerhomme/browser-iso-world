@@ -13,8 +13,11 @@ export const TREE_MAX = 2.8;
 export const ROCK_MIN = 1.2;
 export const ROCK_MAX = 2.2;
 
-export const MIN_ZOOM = 0.6;
+export const MIN_ZOOM = 1.0;
 export const MAX_ZOOM = 3;
 export const DEFAULT_ZOOM = 1.5;
 
 export const MAX_STACK = 6;
+
+export const RENDER_RADIUS_MAX = 56;
+export const CHUNK_BUDGET_PER_FRAME = 3;

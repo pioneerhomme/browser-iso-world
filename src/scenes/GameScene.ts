@@ -28,6 +28,7 @@ import { SpritePool } from '../features/render/SpritePool';
 import { ToolId, TOOL_FOR_RESOURCE, TOOL_LABELS, STARTER_TOOLS } from '../features/tools/ToolsSystem';
 import { HarvestProgress, HITS_REQUIRED } from '../features/harvest/HarvestProgress';
 import { getChunkTexture, CHUNK, CHUNK_OFF_X } from '../features/render/ChunkTerrain';
+import { RENDER_RADIUS_MAX, CHUNK_BUDGET_PER_FRAME } from '../core/constants';
 
 export class GameScene extends Phaser.Scene {
   private hud!: Hud;
@@ -63,6 +64,8 @@ export class GameScene extends Phaser.Scene {
 
   private hitTimes = new Map<string, number>();
 
+  private chunkLastUsed = new Map<string, number>();
+  private evictTimer = 0;
   private buildMode = false;
   private removeMode = false;
   private selectedItem: ItemId = 'wood';
@@ -456,40 +459,59 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-    private renderWorld(): void {
+      private renderWorld(): void {
     const used = new Set<string>();
     const cam = this.cameras.main;
 
-    const tl = cam.getWorldPoint(0, 0);
-    const tr = cam.getWorldPoint(cam.width, 0);
-    const bl = cam.getWorldPoint(0, cam.height);
-    const br = cam.getWorldPoint(cam.width, cam.height);
+    // радиус рендера по экрану и зуму, с потолком
+    const need =
+      Math.ceil(
+        Math.max(
+          cam.width / (this.zoom * TILE_W),
+          cam.height / (this.zoom * TILE_H)
+        )
+      ) + 4;
+    const R = Math.min(need, RENDER_RADIUS_MAX);
 
-    const minX = Math.min(tl.x, tr.x, bl.x, br.x) - 6;
-    const maxX = Math.max(tl.x, tr.x, bl.x, br.x) + 6;
-    const minY = Math.min(tl.y, tr.y, bl.y, br.y) - 20;
-    const maxY = Math.max(tl.y, tr.y, bl.y, br.y) + 2;
+    const pcx = Math.round(this.player.x);
+    const pcy = Math.round(this.player.y);
 
-    // ── земля: чанки 16×16 тайлов = 1 спрайт ──
-    const cMinX = Math.floor(minX / CHUNK);
-    const cMaxX = Math.floor(maxX / CHUNK);
-    const cMinY = Math.floor(minY / CHUNK);
-    const cMaxY = Math.floor(maxY / CHUNK);
+    // ── чанки земли: постепенная подгрузка, ближайшие к игроку — первыми ──
+    const cMinX = Math.floor((pcx - R) / CHUNK);
+    const cMaxX = Math.floor((pcx + R) / CHUNK);
+    const cMinY = Math.floor((pcy - R) / CHUNK);
+    const cMaxY = Math.floor((pcy + R) / CHUNK);
 
+    const chunks: Array<{ cx: number; cy: number; d: number }> = [];
     for (let cy = cMinY; cy <= cMaxY; cy++) {
       for (let cx = cMinX; cx <= cMaxX; cx++) {
-        const p = worldToScreen(cx * CHUNK, cy * CHUNK, 0);
-        const cKey = 'c' + cx + '|' + cy;
-        used.add(cKey);
-        this.pool
-          .acquire(cKey, p.x - CHUNK_OFF_X, p.y, getChunkTexture(this, cx, cy), 0)
-          .setOrigin(0, 0);
+        const dx = cx * CHUNK - pcx;
+        const dy = cy * CHUNK - pcy;
+        chunks.push({ cx, cy, d: dx * dx + dy * dy });
       }
     }
+    chunks.sort((a, b) => a.d - b.d);
 
-    // ── объекты: только тайлы с деревьями/камнями/постройками ──
-    for (let y = Math.floor(minY); y <= Math.floor(maxY); y++) {
-      for (let x = Math.floor(minX); x <= Math.floor(maxX); x++) {
+    let budget = CHUNK_BUDGET_PER_FRAME;
+    for (const c of chunks) {
+      const texKey = `chunk_${c.cx}_${c.cy}`;
+
+      if (!this.textures.exists(texKey)) {
+        if (budget <= 0) continue; // дорисуется в следующих кадрах
+        budget--;
+        getChunkTexture(this, c.cx, c.cy);
+      }
+
+      const p = worldToScreen(c.cx * CHUNK, c.cy * CHUNK, 0);
+      const cKey = 'c' + c.cx + '|' + c.cy;
+      used.add(cKey);
+      this.pool.acquire(cKey, p.x - CHUNK_OFF_X, p.y, texKey, 0).setOrigin(0, 0);
+      this.chunkLastUsed.set(texKey, this.time.now);
+    }
+
+    // ── объекты (деревья, камни, постройки) в том же радиусе ──
+    for (let y = pcy - R; y <= pcy + R; y++) {
+      for (let x = pcx - R; x <= pcx + R; x++) {
         const tile = WorldGen.getTile(x, y, WORLD_SEED);
 
         const stack = this.build.getStack(x, y);
@@ -534,6 +556,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.pool.flush(used);
+
+    // ── выгрузка чанков, которые не видим 15+ секунд ──
+    this.evictTimer++;
+    if (this.evictTimer >= 300) {
+      this.evictTimer = 0;
+      const now = this.time.now;
+      for (const [texKey, t] of this.chunkLastUsed) {
+        if (now - t > 15000) {
+          this.textures.remove(texKey);
+          this.chunkLastUsed.delete(texKey);
+        }
+      }
+    }
 
     const p = worldToScreen(this.player.x, this.player.y, 0);
     this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 4);
