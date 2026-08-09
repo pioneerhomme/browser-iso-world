@@ -24,7 +24,7 @@ import { BuildManager } from '../features/building/BuildManager';
 import { CraftingSystem } from '../features/crafting/CraftingSystem';
 import { Hud } from '../ui/Hud';
 import { Appearance } from '../features/equipment/types';
-import { getCharacterTexture } from '../features/art/TextureFactory';
+import { getHeroTexture } from '../features/art/CharacterSprites';
 import { SaveSystem } from '../features/save/SaveSystem';
 import { SpritePool } from '../features/render/SpritePool';
 import { ToolId, TOOL_FOR_RESOURCE, TOOL_LABELS, STARTER_TOOLS } from '../features/tools/ToolsSystem';
@@ -54,19 +54,18 @@ export class GameScene extends Phaser.Scene {
   };
 
   private playerSprite!: Phaser.GameObjects.Image;
-  private walkTexA = '';
-  private walkTexB = '';
-  private walkTimer = 0;
-  private walkFrame = 0;
+  private facing: 'down' | 'up' | 'left' | 'right' = 'down';
+  private animTimer = 0;
+  private animIndex = 0;
   private moving = false;
 
   private zoom = DEFAULT_ZOOM;
   private targetZoom = DEFAULT_ZOOM;
 
   private hitTimes = new Map<string, number>();
-
   private chunkLastUsed = new Map<string, number>();
   private evictTimer = 0;
+
   private buildMode = false;
   private removeMode = false;
   private selectedItem: ItemId = 'wood';
@@ -98,6 +97,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.children.removeAll(true);
+
     const savedAppearance = this.registry.get('appearance');
     if (savedAppearance) {
       this.appearance = savedAppearance as Appearance;
@@ -123,9 +123,7 @@ export class GameScene extends Phaser.Scene {
 
     this.pool = new SpritePool(this);
 
-    this.walkTexA = getCharacterTexture(this, this.appearance, 0);
-    this.walkTexB = getCharacterTexture(this, this.appearance, 1);
-    this.playerSprite = this.add.image(0, 0, this.walkTexA);
+    this.playerSprite = this.add.image(0, 0, getHeroTexture(this, this.appearance, 'down', 0));
     this.playerSprite.setOrigin(0.5, 1);
     this.playerSprite.setScale(CHAR_SCALE);
 
@@ -184,7 +182,6 @@ export class GameScene extends Phaser.Scene {
     if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) this.selectItem('wood');
     if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectItem('stone');
 
-    // плавный зум, точка привязки — персонаж (камера центрирована на нём)
     if (Math.abs(this.targetZoom - this.zoom) > 0.001) {
       this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dt * 10);
     } else {
@@ -193,7 +190,6 @@ export class GameScene extends Phaser.Scene {
 
     this.updateMovement(dt);
 
-    // не даём дереву вырасти под ногами игрока
     this.build.deferRegrowth(Math.floor(this.player.x), Math.floor(this.player.y));
 
     this.updateCamera();
@@ -273,10 +269,15 @@ export class GameScene extends Phaser.Scene {
     this.moving = length > 0;
 
     if (this.moving) {
+      if (Math.abs(horizontal) > Math.abs(vertical)) {
+        this.facing = horizontal > 0 ? 'right' : 'left';
+      } else {
+        this.facing = vertical > 0 ? 'down' : 'up';
+      }
+
       const stepX = (dx / length) * this.player.speed * dt;
       const stepY = (dy / length) * this.player.speed * dt;
 
-      // раздельные оси → скольжение вдоль препятствий
       if (this.canStandAt(this.player.x + stepX, this.player.y)) {
         this.player.x += stepX;
       }
@@ -286,20 +287,25 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── остальное ─────────────────────────────────────────────
-
   private updateWalkAnimation(dt: number): void {
     if (this.moving) {
-      this.walkTimer += dt;
-      if (this.walkTimer > 0.18) {
-        this.walkTimer = 0;
-        this.walkFrame = this.walkFrame === 0 ? 1 : 0;
-        this.playerSprite.setTexture(this.walkFrame === 0 ? this.walkTexA : this.walkTexB);
+      this.animTimer += dt;
+      if (this.animTimer > 0.12) {
+        this.animTimer = 0;
+        this.animIndex = (this.animIndex + 1) % 4;
       }
-    } else if (this.walkFrame !== 0) {
-      this.walkFrame = 0;
-      this.playerSprite.setTexture(this.walkTexA);
+    } else {
+      this.animIndex = 0;
     }
+
+    const frame = this.moving ? [1, 2, 3, 2][this.animIndex] : 0;
+    const base = this.facing === 'left' ? 'right' : this.facing;
+    const tex = getHeroTexture(this, this.appearance, base, frame);
+
+    if (this.playerSprite.texture.key !== tex) {
+      this.playerSprite.setTexture(tex);
+    }
+    this.playerSprite.setFlipX(this.facing === 'left');
   }
 
   private updateCamera(): void {
@@ -311,7 +317,7 @@ export class GameScene extends Phaser.Scene {
     cam.centerOn(p.x, p.y + TILE_H / 2);
   }
 
-    private onPointerDown(pointer: Phaser.Input.Pointer): void {
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const tilePos = screenToWorld(world.x, world.y, 0);
 
@@ -461,11 +467,10 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-      private renderWorld(): void {
+  private renderWorld(): void {
     const used = new Set<string>();
     const cam = this.cameras.main;
 
-    // радиус рендера: корректная изометрическая оценка видимой области
     const need =
       Math.ceil(
         (cam.width / (this.zoom * TILE_W) + cam.height / (this.zoom * TILE_H)) / 2
@@ -475,7 +480,7 @@ export class GameScene extends Phaser.Scene {
     const pcx = Math.round(this.player.x);
     const pcy = Math.round(this.player.y);
 
-    // ── чанки земли (глубина 0 — всегда снизу) ──
+    // ── чанки земли ──
     const cMinX = Math.floor((pcx - R) / CHUNK);
     const cMaxX = Math.floor((pcx + R) / CHUNK);
     const cMinY = Math.floor((pcy - R) / CHUNK);
@@ -504,7 +509,7 @@ export class GameScene extends Phaser.Scene {
       const p = worldToScreen(c.cx * CHUNK, c.cy * CHUNK, 0);
       const cKey = 'c' + c.cx + '|' + c.cy;
       used.add(cKey);
-        this.pool
+      this.pool
         .acquire(cKey, p.x - CHUNK_OFF_X, p.y, texKey, 0)
         .setOrigin(0, 0)
         .setScale(1)
@@ -512,14 +517,13 @@ export class GameScene extends Phaser.Scene {
       this.chunkLastUsed.set(texKey, this.time.now);
     }
 
-    // экранные координаты центра тела игрока — для «прояснения» деревьев
+    // ── объекты ──
+    const DEPTH_OFFSET = 1024;
+
     const pp = worldToScreen(this.player.x, this.player.y, 0);
     const playerSX = pp.x;
     const playerSY = pp.y + TILE_H / 2 - 24;
     const playerDepthSum = this.player.x + this.player.y;
-
-    // ── объекты: глубина со сдвигом +1024, чтобы не было отрицательных ──
-    const DEPTH_OFFSET = 1024;
 
     for (let y = pcy - R; y <= pcy + R; y++) {
       for (let x = pcx - R; x <= pcx + R; x++) {
@@ -560,7 +564,6 @@ export class GameScene extends Phaser.Scene {
 
           const p = worldToScreen(x, y, 0);
 
-          // дерево, закрывающее игрока, становится полупрозрачным
           let alpha = 1;
           if (x + y >= Math.floor(playerDepthSum)) {
             const halfW = (isTree ? 24 : 20) * scale;
@@ -602,7 +605,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const p = worldToScreen(this.player.x, this.player.y, 0);
-    this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 4);
+    this.playerSprite.setPosition(p.x, p.y + TILE_H / 2 + 2);
     this.playerSprite.setDepth(DEPTH_OFFSET + this.player.x + this.player.y + 0.5);
   }
 }

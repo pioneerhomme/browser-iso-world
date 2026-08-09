@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { EquipmentState } from '../features/equipment/EquipmentState';
 import { ITEMS } from '../features/equipment/items';
-import { getCharacterTexture, getItemIconTexture } from '../features/art/TextureFactory';
+import { getHeroTexture } from '../features/art/CharacterSprites';
+import { getItemIconTexture } from '../features/art/TextureFactory';
 import { EQUIPMENT_SLOTS, EquipmentSlot, SLOT_LABELS } from '../features/equipment/types';
 import { SaveSystem } from '../features/save/SaveSystem';
 
@@ -27,7 +28,7 @@ export class CharacterScene extends Phaser.Scene {
 
   private dynamic: Phaser.GameObjects.Container[] = [];
 
-    private onScaleResize = (): void => {
+  private onScaleResize = (): void => {
     this.time.delayedCall(150, () => {
       this.scene.restart();
     });
@@ -122,11 +123,11 @@ export class CharacterScene extends Phaser.Scene {
     // превью
     this.previewX = Math.max(90, w * 0.22);
     this.previewFeetY = topH * 0.92;
-    this.previewScale = Math.max(4, Math.min(7, Math.floor(topH / 60)));
-        this.previewImage = this.add.image(
+    this.previewScale = Math.max(4, Math.min(6, Math.floor(topH / 70)));
+    this.previewImage = this.add.image(
       this.previewX,
       this.previewFeetY,
-      getCharacterTexture(this, this.state.appearance(), 0)
+      getHeroTexture(this, this.state.appearance(), 'down', 0)
     );
     this.previewImage.setOrigin(0.5, 1);
 
@@ -245,7 +246,7 @@ export class CharacterScene extends Phaser.Scene {
   }
 
   private refresh(): void {
-    this.previewImage.setTexture(getCharacterTexture(this, this.state.appearance(), 0));
+    this.previewImage.setTexture(getHeroTexture(this, this.state.appearance(), 'down', 0));
     this.previewImage.setScale(this.previewScale);
 
     for (const c of this.dynamic) {

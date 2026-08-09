@@ -1,29 +1,29 @@
 import { EquipmentSlot } from '../equipment/types';
 
 export const TREE_ROWS = [
-  '.....GG.....',
-  '....GGGG....',
-  '...GGGGGG...',
-  '..GGGgGGGG..',
-  '...GGGGGG...',
-  '....GGGG....',
-  '...GGGGGG...',
-  '..GGGGgGGG..',
-  '.GGGGGGGGGG.',
-  '..GGGGGGgG..',
+  '.....hh.....',
+  '....hGGG....',
+  '...hGGGGd...',
+  '..hGGgGGGd..',
+  '...GGGGGd...',
+  '....GGGd....',
+  '...GGGGGd...',
+  '..GGGgGGdd..',
+  '.hGGGGGGGdd.',
+  '..GGGGGGdd..',
   '....TT......',
-  '....TTT.....',
+  '....TTd.....',
   '....TT......',
   '...TTTT.....'
 ];
 
 export const ROCK_ROWS = [
-  '...RRRR...',
-  '..RRRRRR..',
-  '.RRrRRRRR.',
-  '.RRRRrRRR.',
-  '..RRRRRR..',
-  '...RRRR...'
+  '...hhRR...',
+  '..hRRRRd..',
+  '.hRrRRRdd.',
+  '.RRRRrRdd.',
+  '..RRRRdd..',
+  '...RRdd...'
 ];
 
 export function characterBaseRows(spread: boolean): string[] {

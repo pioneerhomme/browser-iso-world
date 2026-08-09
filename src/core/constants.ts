@@ -6,7 +6,7 @@ export const WORLD_SEED = 20260807;
 
 export const TERRAIN_SCALE = 0.5;
 export const BLOCK_SCALE = 0.5;
-export const CHAR_SCALE = 1.5;
+export const CHAR_SCALE = 1.2;
 
 export const TREE_MIN = 1.6;
 export const TREE_MAX = 2.8;

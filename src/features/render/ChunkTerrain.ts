@@ -3,7 +3,7 @@ import { TILE_W, TILE_H, WORLD_SEED } from '../../core/constants';
 import { hash2 } from '../../core/rng';
 import { Terrain } from '../../core/types';
 import { WorldGen } from '../world/WorldGen';
-import { css } from '../art/pixel';
+import { css, shade } from '../art/pixel';
 
 export const CHUNK = 16;
 export const CHUNK_OFF_X = 256;
@@ -51,8 +51,21 @@ export function getChunkTexture(scene: Phaser.Scene, cx: number, cy: number): st
       ctx.closePath();
       ctx.fill();
 
-      ctx.strokeStyle = css(c.edge);
+      // объём: светлые верхние грани, тёмные нижние
       ctx.lineWidth = 1;
+
+      ctx.strokeStyle = css(shade(c.base, 1.3));
+      ctx.beginPath();
+      ctx.moveTo(lx - TILE_W / 2, ly + TILE_H / 2);
+      ctx.lineTo(lx, ly);
+      ctx.lineTo(lx + TILE_W / 2, ly + TILE_H / 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = css(shade(c.base, 0.72));
+      ctx.beginPath();
+      ctx.moveTo(lx - TILE_W / 2, ly + TILE_H / 2);
+      ctx.lineTo(lx, ly + TILE_H);
+      ctx.lineTo(lx + TILE_W / 2, ly + TILE_H / 2);
       ctx.stroke();
 
       ctx.fillStyle = css(c.alt);
