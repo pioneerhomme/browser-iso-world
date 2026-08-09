@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import {
   WORLD_SEED,
+  TILE_W,
   TILE_H,
-  TERRAIN_SCALE,
   BLOCK_SCALE,
   CHAR_SCALE,
   TREE_MIN,
@@ -11,7 +11,9 @@ import {
   ROCK_MAX,
   MIN_ZOOM,
   MAX_ZOOM,
-  DEFAULT_ZOOM
+  DEFAULT_ZOOM,
+  RENDER_RADIUS_MAX,
+  CHUNK_BUDGET_PER_FRAME
 } from '../core/constants';
 import { worldToScreen, screenToWorld } from '../core/iso';
 import { hash2 } from '../core/rng';
@@ -28,7 +30,6 @@ import { SpritePool } from '../features/render/SpritePool';
 import { ToolId, TOOL_FOR_RESOURCE, TOOL_LABELS, STARTER_TOOLS } from '../features/tools/ToolsSystem';
 import { HarvestProgress, HITS_REQUIRED } from '../features/harvest/HarvestProgress';
 import { getChunkTexture, CHUNK, CHUNK_OFF_X } from '../features/render/ChunkTerrain';
-import { RENDER_RADIUS_MAX, CHUNK_BUDGET_PER_FRAME } from '../core/constants';
 
 export class GameScene extends Phaser.Scene {
   private hud!: Hud;
