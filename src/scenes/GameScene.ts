@@ -297,23 +297,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCamera(): void {
-    const p = worldToScreen(this.player.x, this.player.y, 0);
     const cam = this.cameras.main;
 
     cam.setZoom(this.zoom);
-    cam.setScroll(
-      p.x - cam.width / (2 * this.zoom),
-      p.y + TILE_H / 2 - cam.height / (2 * this.zoom)
-    );
+
+    const p = worldToScreen(this.player.x, this.player.y, 0);
+    cam.centerOn(p.x, p.y + TILE_H / 2);
   }
 
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    const cam = this.cameras.main;
-
-    const px = cam.scrollX + pointer.x / this.zoom;
-    const py = cam.scrollY + pointer.y / this.zoom;
-
-    const tilePos = screenToWorld(px, py, 0);
+    private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const tilePos = screenToWorld(world.x, world.y, 0);
 
     if (pointer.rightButtonDown() || this.removeMode) {
       this.tryRemove(tilePos.x, tilePos.y);
@@ -465,17 +459,15 @@ export class GameScene extends Phaser.Scene {
     const used = new Set<string>();
     const cam = this.cameras.main;
 
-    const corners = [
-      screenToWorld(cam.scrollX, cam.scrollY),
-      screenToWorld(cam.scrollX + cam.width / this.zoom, cam.scrollY),
-      screenToWorld(cam.scrollX, cam.scrollY + cam.height / this.zoom),
-      screenToWorld(cam.scrollX + cam.width / this.zoom, cam.scrollY + cam.height / this.zoom)
-    ];
+    const tl = cam.getWorldPoint(0, 0);
+    const tr = cam.getWorldPoint(cam.width, 0);
+    const bl = cam.getWorldPoint(0, cam.height);
+    const br = cam.getWorldPoint(cam.width, cam.height);
 
-    const minX = Math.min(...corners.map((c) => c.x)) - 2;
-    const maxX = Math.max(...corners.map((c) => c.x)) + 2;
-    const minY = Math.min(...corners.map((c) => c.y)) - 10;
-    const maxY = Math.max(...corners.map((c) => c.y)) + 2;
+    const minX = Math.min(tl.x, tr.x, bl.x, br.x) - 6;
+    const maxX = Math.max(tl.x, tr.x, bl.x, br.x) + 6;
+    const minY = Math.min(tl.y, tr.y, bl.y, br.y) - 20;
+    const maxY = Math.max(tl.y, tr.y, bl.y, br.y) + 2;
 
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
