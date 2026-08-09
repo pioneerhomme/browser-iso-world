@@ -90,6 +90,7 @@ export class GameScene extends Phaser.Scene {
   private ghost!: Phaser.GameObjects.Image;
   private ghostCell!: Phaser.GameObjects.Image;
   private lastPointer: { x: number; y: number } | null = null;
+  private rightHeld = false;
   private swingSprite: Phaser.GameObjects.Image | null = null;
 
   private saveTimer = 0;
@@ -238,6 +239,12 @@ export class GameScene extends Phaser.Scene {
       this.lastPointer = { x: pointer.x, y: pointer.y };
       const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.hoverTarget = this.findResourceTarget(world.x, world.y);
+    });
+
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.rightButtonDown()) {
+        this.rightHeld = false;
+      }
     });
 
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
@@ -390,6 +397,7 @@ export class GameScene extends Phaser.Scene {
   // ── взаимодействие в стиле Minecraft ──
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    this.rightHeld = pointer.rightButtonDown();
     const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const tilePos = screenToWorld(world.x, world.y, 0);
 
@@ -559,22 +567,33 @@ export class GameScene extends Phaser.Scene {
     const hx = tilePos.x;
     const hy = tilePos.y;
 
+    const zTop = this.build.topZ(hx, hy);
+
+    // рамка тайла/верхней грани — всегда под курсором
+    const cp = worldToScreen(hx, hy, zTop);
+    this.ghostCell.setPosition(cp.x, cp.y);
+    this.ghostCell.setDepth(1024 + hx + hy + 0.4 + zTop * 0.01);
+    this.ghostCell.setVisible(true);
+
+    // призрак — только в режиме установки и при наличии предмета
     const itemId = HOTBAR_ITEMS[this.selectedSlot];
+    const count = this.inventory.get(itemId);
+    const armed = this.placeMode || this.rightHeld;
+
+    if (!armed || count <= 0) {
+      this.ghost.setVisible(false);
+      return;
+    }
+
     const def = ITEM_DEFS[itemId];
     const tile = WorldGen.getTile(hx, hy, WORLD_SEED);
-
-    const z = itemId === 'bed' ? 0 : this.build.topZ(hx, hy);
+    const z = itemId === 'bed' ? 0 : zTop;
 
     const valid =
       this.build.canPlaceAt(tile, hx, hy, itemId) &&
-      this.inventory.get(itemId) > 0 &&
       !(Math.round(this.player.x) === hx && Math.round(this.player.y) === hy);
 
     const p = worldToScreen(hx, hy, z);
-
-    this.ghostCell.setPosition(p.x, p.y);
-    this.ghostCell.setDepth(1024 + hx + hy + 0.4);
-    this.ghostCell.setVisible(true);
 
     this.ghost.setTexture(def.placeTexture ?? 'block_wood');
     this.ghost.setPosition(p.x, p.y + TILE_H);
