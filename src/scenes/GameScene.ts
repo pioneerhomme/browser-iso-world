@@ -90,6 +90,7 @@ export class GameScene extends Phaser.Scene {
   private ghost!: Phaser.GameObjects.Image;
   private ghostCell!: Phaser.GameObjects.Image;
   private lastPointer: { x: number; y: number } | null = null;
+  private swingSprite: Phaser.GameObjects.Image | null = null;
 
   private saveTimer = 0;
   private clockTimer = 0;
@@ -435,9 +436,9 @@ export class GameScene extends Phaser.Scene {
 
     const tile = WorldGen.getTile(x, y, WORLD_SEED);
     if (!this.build.canPlaceAt(tile, x, y, itemId)) return;
-    if (!this.spendEnergy(COST.place)) return;
 
     if (this.build.place(x, y, itemId)) {
+      this.playSwing(ITEM_DEFS[itemId].placeTexture ?? 'block_wood');
       this.inventory.remove(itemId, 1);
       this.refreshHotbar();
       if (this.inventoryOpen) this.refreshInventoryUI();
@@ -445,12 +446,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private tryBreak(x: number, y: number): void {
+    private tryBreak(x: number, y: number): void {
     if (this.build.topZ(x, y) <= 0) return;
-    if (!this.spendEnergy(COST.remove)) return;
 
     const item = this.build.removeTop(x, y);
     if (item) {
+      const tool = this.heldTool();
+      this.playSwing(tool === 'axe' ? 'icon_axe' : tool === 'pickaxe' ? 'icon_pickaxe' : 'spark');
       this.inventory.add(item, 1);
       this.floatText(x + 0.5, y + 0.5, `+ ${ITEM_DEFS[item]?.name ?? item}`, '#9ff09a');
       this.refreshHotbar();
@@ -475,6 +477,7 @@ export class GameScene extends Phaser.Scene {
     const oKey = `o${x}|${y}|0`;
     this.hitTimes.set(oKey, this.time.now);
     this.spawnHitFx(x, y);
+    this.playSwing(tool === 'axe' ? 'icon_axe' : 'icon_pickaxe');
 
     const hits = this.harvestProgress.hit(x, y);
 
@@ -504,6 +507,40 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.floatText(x + 0.5, y + 0.5, `${hits}/${HITS_REQUIRED}`, '#ffffff');
     }
+  }
+
+    // ── взмах при действиях ──
+
+  private playSwing(texture: string): void {
+    if (this.swingSprite) {
+      this.swingSprite.destroy();
+      this.swingSprite = null;
+    }
+
+    const p = worldToScreen(this.player.x, this.player.y, 0);
+    const left =
+      this.facing === 'left' || this.facing === 'downleft' || this.facing === 'upleft';
+    const dirX = left ? -1 : 1;
+
+    const s = this.add.image(p.x + 10 * dirX, p.y - 14, texture);
+    s.setOrigin(0.5, 0.8);
+    s.setDepth(1024 + this.player.x + this.player.y + 0.6);
+    s.setAlpha(0.95);
+    s.setFlipX(left);
+    s.setRotation(left ? 1.1 : -1.1);
+
+    this.tweens.add({
+      targets: s,
+      rotation: left ? -1.1 : 1.1,
+      duration: 160,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        s.destroy();
+        if (this.swingSprite === s) this.swingSprite = null;
+      }
+    });
+
+    this.swingSprite = s;
   }
 
     // ── призрак перед установкой ──
