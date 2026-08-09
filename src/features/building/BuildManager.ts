@@ -1,12 +1,12 @@
-import { ItemId, TileData } from '../../core/types';
+import { TileData } from '../../core/types';
 import { Inventory } from '../inventory/Inventory';
+import { ITEM_DEFS } from '../items/ItemCatalog';
 import { MAX_STACK } from '../../core/constants';
 
 const REGROW_MS = 90_000;
-const YIELD = 3;
 
 export class BuildManager {
-  private placed = new Map<string, ItemId>();
+  private placed = new Map<string, string>();
   private harvested = new Map<string, number>();
 
   private key3(x: number, y: number, z: number): string {
@@ -17,8 +17,8 @@ export class BuildManager {
     return `${x}|${y}`;
   }
 
-  getStack(x: number, y: number): ItemId[] {
-    const stack: ItemId[] = [];
+  getStack(x: number, y: number): string[] {
+    const stack: string[] = [];
     for (let z = 0; z < MAX_STACK; z++) {
       const item = this.placed.get(this.key3(x, y, z));
       if (!item) break;
@@ -52,29 +52,65 @@ export class BuildManager {
     }
   }
 
-  canPlaceAt(tile: TileData, x: number, y: number): boolean {
-    if (this.topZ(x, y) > 0) return true;
+  private groundOk(tile: TileData, x: number, y: number): boolean {
     if (tile.terrain === 'water') return false;
     if (tile.resource && !this.isHarvested(x, y)) return false;
     return true;
   }
 
-  place(x: number, y: number, item: ItemId): boolean {
-    const z = this.topZ(x, y);
-    if (z >= MAX_STACK) return false;
+  canPlaceAt(tile: TileData, x: number, y: number, itemId: string): boolean {
+    const def = ITEM_DEFS[itemId];
+    if (!def || def.kind !== 'placeable') return false;
 
-    this.placed.set(this.key3(x, y, z), item);
+    if (itemId === 'bed') {
+      return this.topZ(x, y) === 0 && this.groundOk(tile, x, y);
+    }
+
+    if (this.topZ(x, y) >= MAX_STACK) return false;
+    if (this.getStack(x, y)[0] === 'bed') return false;
+    if (this.topZ(x, y) === 0 && !this.groundOk(tile, x, y)) return false;
+
     return true;
   }
 
-  removeTop(x: number, y: number, inventory: Inventory): boolean {
+  place(x: number, y: number, itemId: string): boolean {
+    if (itemId === 'bed') {
+      if (this.topZ(x, y) !== 0) return false;
+      this.placed.set(this.key3(x, y, 0), itemId);
+      return true;
+    }
+
+    const z = this.topZ(x, y);
+    if (z >= MAX_STACK) return false;
+
+    this.placed.set(this.key3(x, y, z), itemId);
+    return true;
+  }
+
+  removeTop(x: number, y: number): string | null {
     const z = this.topZ(x, y) - 1;
-    if (z < 0) return false;
+    if (z < 0) return null;
 
     const item = this.placed.get(this.key3(x, y, z))!;
     this.placed.delete(this.key3(x, y, z));
-    inventory.add(item, 1);
-    return true;
+    return item;
+  }
+
+  findNearestBed(x: number, y: number, radius: number): { x: number; y: number } | null {
+    let best: { x: number; y: number } | null = null;
+    let bestD = radius;
+
+    for (const [key, item] of this.placed) {
+      if (item !== 'bed') continue;
+      const [bx, by] = key.split('|').map(Number);
+      const d = Math.hypot(bx + 0.5 - x, by + 0.5 - y);
+      if (d <= bestD) {
+        bestD = d;
+        best = { x: bx, y: by };
+      }
+    }
+
+    return best;
   }
 
   harvest(x: number, y: number, tile: TileData, inventory: Inventory): boolean {
@@ -85,15 +121,15 @@ export class BuildManager {
     this.harvested.set(k, Date.now());
 
     if (tile.resource === 'tree') {
-      inventory.add('wood', YIELD);
+      inventory.add('wood', 3);
     } else {
-      inventory.add('stone', YIELD);
+      inventory.add('stone', 3);
     }
 
     return true;
   }
 
-  serialize(): { placed: Record<string, ItemId>; harvested: Record<string, number> } {
+  serialize(): { placed: Record<string, string>; harvested: Record<string, number> } {
     const harvested: Record<string, number> = {};
     this.harvested.forEach((t, k) => {
       harvested[k] = t;
@@ -105,7 +141,7 @@ export class BuildManager {
     };
   }
 
-  restore(placed: Record<string, ItemId>, harvested: Record<string, number>): void {
+  restore(placed: Record<string, string>, harvested: Record<string, number>): void {
     this.placed = new Map(Object.entries(placed));
     this.harvested = new Map(Object.entries(harvested));
   }

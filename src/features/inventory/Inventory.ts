@@ -1,28 +1,24 @@
-import { ItemId } from '../../core/types';
-
 export class Inventory {
-  private counts = new Map<ItemId, number>();
+  private counts = new Map<string, number>();
 
-  constructor(initial: Partial<Record<ItemId, number>> = {}) {
+  constructor(initial: Partial<Record<string, number>> = {}) {
     for (const key of Object.keys(initial)) {
-      const item = key as ItemId;
-      const amount = initial[item];
-
+      const amount = initial[key];
       if (amount) {
-        this.counts.set(item, amount);
+        this.counts.set(key, amount);
       }
     }
   }
 
-  get(item: ItemId): number {
+  get(item: string): number {
     return this.counts.get(item) ?? 0;
   }
 
-  add(item: ItemId, amount = 1): void {
+  add(item: string, amount = 1): void {
     this.counts.set(item, this.get(item) + amount);
   }
 
-  remove(item: ItemId, amount = 1): boolean {
+  remove(item: string, amount = 1): boolean {
     const current = this.get(item);
 
     if (current < amount) {
@@ -40,8 +36,8 @@ export class Inventory {
     return true;
   }
 
-  serialize(): Partial<Record<ItemId, number>> {
-    const out: Partial<Record<ItemId, number>> = {};
+  serialize(): Partial<Record<string, number>> {
+    const out: Partial<Record<string, number>> = {};
     this.counts.forEach((amount, item) => {
       out[item] = amount;
     });

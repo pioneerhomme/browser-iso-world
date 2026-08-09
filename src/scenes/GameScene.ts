@@ -17,11 +17,10 @@ import {
 } from '../core/constants';
 import { worldToScreen, screenToWorld } from '../core/iso';
 import { hash2 } from '../core/rng';
-import { ItemId } from '../core/types';
 import { WorldGen } from '../features/world/WorldGen';
 import { Inventory } from '../features/inventory/Inventory';
 import { BuildManager } from '../features/building/BuildManager';
-import { CraftingSystem } from '../features/crafting/CraftingSystem';
+import { CraftingSystem, RECIPES, Recipe } from '../features/crafting/CraftingSystem';
 import { Hud } from '../ui/Hud';
 import { Appearance } from '../features/equipment/types';
 import { getHeroTexture, HeroFacing } from '../features/art/CharacterSprites';
@@ -36,6 +35,7 @@ import {
 } from '../features/tools/ToolsSystem';
 import { HarvestProgress, HITS_REQUIRED } from '../features/harvest/HarvestProgress';
 import { getChunkTexture, CHUNK, CHUNK_OFF_X } from '../features/render/ChunkTerrain';
+import { ITEM_DEFS, HOTBAR_ITEMS } from '../features/items/ItemCatalog';
 import {
   TIME_SCALE,
   DAY_START,
@@ -60,11 +60,7 @@ export class GameScene extends Phaser.Scene {
   private tools: ToolId[] = [...STARTER_TOOLS];
   private toolDurability: Record<string, number> = { axe: TOOL_MAX_DURABILITY, pickaxe: TOOL_MAX_DURABILITY };
 
-  private player = {
-    x: 0,
-    y: 0,
-    speed: 4.5
-  };
+  private player = { x: 0, y: 0, speed: 4.5 };
 
   private appearance: Appearance = {
     skin: 0xf2c79a,
@@ -86,22 +82,18 @@ export class GameScene extends Phaser.Scene {
 
   private hoverTarget: { x: number; y: number } | null = null;
 
-  private buildMode = false;
-  private removeMode = false;
-  private selectedItem: ItemId = 'wood';
+  // minecraft-взаимодействие
+  private placeMode = false;
+  private selectedSlot = 0;
 
   private saveTimer = 0;
   private clockTimer = 0;
 
-  // ── время и энергия ──
   private day = 1;
   private timeMin = DAY_START;
   private energy = MAX_ENERGY;
   private sleeping = false;
   private nightOverlay!: Phaser.GameObjects.Rectangle;
-
-  private bedX = 2;
-  private bedY = 2;
 
   private inventoryOpen = false;
   private invUI: Array<
@@ -119,11 +111,10 @@ export class GameScene extends Phaser.Scene {
   private keyS?: Phaser.Input.Keyboard.Key;
   private keyD?: Phaser.Input.Keyboard.Key;
 
-  private keyBuild?: Phaser.Input.Keyboard.Key;
-  private keyRemove?: Phaser.Input.Keyboard.Key;
   private keyCraft?: Phaser.Input.Keyboard.Key;
   private keyOne?: Phaser.Input.Keyboard.Key;
   private keyTwo?: Phaser.Input.Keyboard.Key;
+  private keyThree?: Phaser.Input.Keyboard.Key;
   private keyInv?: Phaser.Input.Keyboard.Key;
   private keySleep?: Phaser.Input.Keyboard.Key;
 
@@ -166,6 +157,9 @@ export class GameScene extends Phaser.Scene {
       this.day = save.day;
       this.timeMin = save.timeMin;
       this.energy = save.energy;
+    } else {
+      // стартовая кровать в мире
+      this.build.place(2, 2, 'bed');
     }
 
     this.pool = new SpritePool(this);
@@ -174,7 +168,6 @@ export class GameScene extends Phaser.Scene {
     this.playerSprite.setOrigin(0.5, 1);
     this.playerSprite.setScale(CHAR_SCALE);
 
-    // ночной оверлей
     this.nightOverlay = this.add.rectangle(-1000, -1000, 8000, 6000, 0x0a1030);
     this.nightOverlay.setOrigin(0, 0);
     this.nightOverlay.setScrollFactor(0);
@@ -191,11 +184,10 @@ export class GameScene extends Phaser.Scene {
       this.keyS = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
       this.keyD = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
 
-      this.keyBuild = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
-      this.keyRemove = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
       this.keyCraft = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
       this.keyOne = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
       this.keyTwo = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+      this.keyThree = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
       this.keyInv = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
       this.keySleep = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     }
@@ -223,17 +215,19 @@ export class GameScene extends Phaser.Scene {
     this.buildInventoryUI();
 
     this.hud = new Hud({
-      onToggleBuild: () => this.toggleBuild(),
-      onToggleRemove: () => this.toggleRemove(),
-      onCraft: () => this.craft(),
-      onSelectWood: () => this.selectItem('wood'),
-      onSelectStone: () => this.selectItem('stone'),
+      onTogglePlace: () => this.togglePlaceMode(),
+      onToggleInventory: () => this.toggleInventory(),
       onZoomIn: () => this.adjustZoom(0.25),
       onZoomOut: () => this.adjustZoom(-0.25),
-      onToggleInventory: () => this.toggleInventory()
+      onSelectSlot: (i) => {
+        this.selectedSlot = i;
+        this.refreshHotbar();
+        this.updateHud();
+      }
     });
 
     this.updateHud();
+    this.refreshHotbar();
     this.hud.setClock(`День ${this.day}, ${formatClock(this.timeMin)}`);
     this.hud.setEnergy(this.energy / MAX_ENERGY);
   }
@@ -242,7 +236,6 @@ export class GameScene extends Phaser.Scene {
     const dt = Math.min(delta / 1000, 0.05);
 
     if (!this.sleeping) {
-      // ── время суток ──
       this.timeMin += dt * TIME_SCALE;
       if (this.timeMin >= PASS_OUT) {
         this.doSleep(true);
@@ -257,14 +250,13 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (this.keyBuild && Phaser.Input.Keyboard.JustDown(this.keyBuild)) this.toggleBuild();
-    if (this.keyRemove && Phaser.Input.Keyboard.JustDown(this.keyRemove)) this.toggleRemove();
-    if (this.keyCraft && Phaser.Input.Keyboard.JustDown(this.keyCraft)) this.craft();
-    if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) this.selectItem('wood');
-    if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectItem('stone');
+    if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) this.selectSlot(0);
+    if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectSlot(1);
+    if (this.keyThree && Phaser.Input.Keyboard.JustDown(this.keyThree)) this.selectSlot(2);
     if (this.keyInv && Phaser.Input.Keyboard.JustDown(this.keyInv)) this.toggleInventory();
     if (this.keySleep && Phaser.Input.Keyboard.JustDown(this.keySleep)) {
-      if (this.nearBed()) this.doSleep(false);
+      const bed = this.build.findNearestBed(this.player.x, this.player.y, 2.5);
+      if (bed) this.doSleep(false);
       else this.floatText(this.player.x, this.player.y, 'Нужна кровать рядом', '#ffffff');
     }
 
@@ -289,11 +281,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── сон и энергия ──
-
-  private nearBed(): boolean {
-    return Math.hypot(this.player.x - (this.bedX + 0.5), this.player.y - (this.bedY + 0.5)) <= 2.5;
-  }
+  // ── сон/энергия ──
 
   private spendEnergy(amount: number): boolean {
     if (this.energy < amount) {
@@ -332,7 +320,28 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ── инвентарь ──
+  // ── хотбар и режимы ──
+
+  private selectSlot(i: number): void {
+    this.selectedSlot = i;
+    this.refreshHotbar();
+    this.updateHud();
+  }
+
+  private togglePlaceMode(): void {
+    this.placeMode = !this.placeMode;
+    this.updateHud();
+  }
+
+  private refreshHotbar(): void {
+    this.hud.setHotbar(
+      HOTBAR_ITEMS.map((id, i) => ({
+        label: ITEM_DEFS[id].name,
+        count: this.inventory.get(id),
+        selected: i === this.selectedSlot
+      }))
+    );
+  }
 
   private heldTool(): ToolId | null {
     if (this.tools.includes('axe')) return 'axe';
@@ -340,11 +349,133 @@ export class GameScene extends Phaser.Scene {
     return null;
   }
 
+  // ── взаимодействие в стиле Minecraft ──
+
+  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const tilePos = screenToWorld(world.x, world.y, 0);
+
+    const wantPlace = pointer.rightButtonDown() || this.placeMode;
+
+    if (wantPlace) {
+      this.tryPlace(tilePos.x, tilePos.y);
+      return;
+    }
+
+    // ЛКМ: кровать рядом — спать, иначе сломать; ресурс — рубить; блок — сломать
+    const stack = this.build.getStack(tilePos.x, tilePos.y);
+
+    if (stack.length > 0) {
+      const topItem = stack[stack.length - 1];
+
+      if (topItem === 'bed') {
+        const d = Math.hypot(tilePos.x + 0.5 - this.player.x, tilePos.y + 0.5 - this.player.y);
+        if (d <= 2.5) {
+          this.doSleep(false);
+          return;
+        }
+      }
+
+      this.tryBreak(tilePos.x, tilePos.y);
+      return;
+    }
+
+    const target = this.findResourceTarget(world.x, world.y);
+    this.hoverTarget = target;
+    if (target) {
+      this.tryHarvest(target.x, target.y);
+    }
+  }
+
+  private tryPlace(x: number, y: number): void {
+    if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) return;
+
+    const itemId = HOTBAR_ITEMS[this.selectedSlot];
+    if (this.inventory.get(itemId) <= 0) {
+      this.floatText(x + 0.5, y + 0.5, 'Нет предмета — скрафти', '#ff8080');
+      return;
+    }
+
+    const tile = WorldGen.getTile(x, y, WORLD_SEED);
+    if (!this.build.canPlaceAt(tile, x, y, itemId)) return;
+    if (!this.spendEnergy(COST.place)) return;
+
+    if (this.build.place(x, y, itemId)) {
+      this.inventory.remove(itemId, 1);
+      this.refreshHotbar();
+      if (this.inventoryOpen) this.refreshInventoryUI();
+      this.persist();
+    }
+  }
+
+  private tryBreak(x: number, y: number): void {
+    if (this.build.topZ(x, y) <= 0) return;
+    if (!this.spendEnergy(COST.remove)) return;
+
+    const item = this.build.removeTop(x, y);
+    if (item) {
+      this.inventory.add(item, 1);
+      this.floatText(x + 0.5, y + 0.5, `+ ${ITEM_DEFS[item]?.name ?? item}`, '#9ff09a');
+      this.refreshHotbar();
+      if (this.inventoryOpen) this.refreshInventoryUI();
+      this.persist();
+    }
+  }
+
+  private tryHarvest(x: number, y: number): void {
+    const tile = WorldGen.getTile(x, y, WORLD_SEED);
+    if (!tile.resource || this.build.isHarvested(x, y)) return;
+
+    const tool = TOOL_FOR_RESOURCE[tile.resource];
+
+    if (!this.tools.includes(tool)) {
+      this.floatText(x + 0.5, y + 0.5, 'Нужен: ' + TOOL_LABELS[tool], '#ff8080');
+      return;
+    }
+
+    if (!this.spendEnergy(tile.resource === 'tree' ? COST.chop : COST.mine)) return;
+
+    const oKey = `o${x}|${y}|0`;
+    this.hitTimes.set(oKey, this.time.now);
+    this.spawnHitFx(x, y);
+
+    const hits = this.harvestProgress.hit(x, y);
+
+    const dur = (this.toolDurability[tool] ?? 1) - 1;
+    this.toolDurability[tool] = dur;
+
+    if (dur <= 0) {
+      this.tools = this.tools.filter((t) => t !== tool);
+      delete this.toolDurability[tool];
+      this.floatText(x + 0.5, y + 0.5, TOOL_LABELS[tool] + ' сломался!', '#ff8080');
+      if (this.inventoryOpen) this.refreshInventoryUI();
+    }
+
+    if (hits >= HITS_REQUIRED) {
+      this.harvestProgress.clear(x, y);
+      this.hitTimes.delete(oKey);
+      this.build.harvest(x, y, tile, this.inventory);
+      this.floatText(x + 0.5, y + 0.5, tile.resource === 'tree' ? '+3 дерева' : '+3 камня', '#9ff09a');
+
+      if (this.hoverTarget && this.hoverTarget.x === x && this.hoverTarget.y === y) {
+        this.hoverTarget = null;
+      }
+
+      this.updateHud();
+      if (this.inventoryOpen) this.refreshInventoryUI();
+      this.persist();
+    } else {
+      this.floatText(x + 0.5, y + 0.5, `${hits}/${HITS_REQUIRED}`, '#ffffff');
+    }
+  }
+
+  // ── инвентарь + крафт ──
+
   private buildInventoryUI(): void {
     const w = this.scale.width;
     const h = this.scale.height;
-    const pw = 340;
-    const ph = 320;
+    const pw = 400;
+    const ph = 480;
     const x0 = (w - pw) / 2;
     const y0 = (h - ph) / 2;
 
@@ -359,37 +490,69 @@ export class GameScene extends Phaser.Scene {
     };
 
     ui(this.add.rectangle(x0 + pw / 2, y0 + ph / 2, pw, ph, 0x10141c, 0.95).setStrokeStyle(2, 0x3a4a6a));
-    ui(this.add.text(x0 + 16, y0 + 12, 'Инвентарь', { fontSize: '20px', color: '#ffffff' }));
+    ui(this.add.text(x0 + 16, y0 + 12, 'Инвентарь и крафт', { fontSize: '20px', color: '#ffffff' }));
 
     this.invWoodText = this.add.text(x0 + 16, y0 + 48, '', { fontSize: '15px', color: '#cfd6e6' });
     ui(this.invWoodText);
-    this.invStoneText = this.add.text(x0 + 180, y0 + 48, '', { fontSize: '15px', color: '#cfd6e6' });
+    this.invStoneText = this.add.text(x0 + 200, y0 + 48, '', { fontSize: '15px', color: '#cfd6e6' });
     ui(this.invStoneText);
 
-    const axeIcon = this.add.image(x0 + 28, y0 + 96, 'icon_axe');
-    ui(axeIcon);
-    this.invAxeText = this.add.text(x0 + 48, y0 + 84, '', { fontSize: '15px', color: '#cfd6e6' });
+    this.invAxeText = this.add.text(x0 + 16, y0 + 74, '', { fontSize: '15px', color: '#cfd6e6' });
     ui(this.invAxeText);
-
-    const pickIcon = this.add.image(x0 + 28, y0 + 140, 'icon_pickaxe');
-    ui(pickIcon);
-    this.invPickText = this.add.text(x0 + 48, y0 + 128, '', { fontSize: '15px', color: '#cfd6e6' });
+    this.invPickText = this.add.text(x0 + 200, y0 + 74, '', { fontSize: '15px', color: '#cfd6e6' });
     ui(this.invPickText);
 
-    const btnAxe = this.add.text(x0 + 16, y0 + 176, 'Сделать топор (3 дер + 2 кам)', {
-      fontSize: '14px', color: '#9ff09a', backgroundColor: '#1d2a1d', padding: { left: 8, right: 8, top: 6, bottom: 6 }
-    }).setInteractive({ useHandCursor: true });
-    ui(btnAxe);
-    btnAxe.on('pointerdown', () => this.craftAxe());
+    // рецепты
+    RECIPES.forEach((recipe, i) => {
+      const ry = y0 + 110 + i * 70;
 
-    const btnPick = this.add.text(x0 + 16, y0 + 212, 'Сделать кирку (3 дер + 2 кам)', {
-      fontSize: '14px', color: '#9ff09a', backgroundColor: '#1d2a1d', padding: { left: 8, right: 8, top: 6, bottom: 6 }
-    }).setInteractive({ useHandCursor: true });
-    ui(btnPick);
-    btnPick.on('pointerdown', () => this.craftPickaxe());
+      // мини-сетка 3x3
+      for (let gy = 0; gy < 3; gy++) {
+        for (let gx = 0; gx < 3; gx++) {
+          const ch = recipe.grid[gy][gx];
+          const color = ch === 'W' ? 0x8a5a33 : ch === 'S' ? 0x9aa2ad : 0x1a2233;
+          ui(this.add.rectangle(x0 + 24 + gx * 16, ry + gy * 16, 14, 14, color).setStrokeStyle(1, 0x3a4a6a));
+        }
+      }
 
-    const hint = this.add.text(x0 + 16, y0 + ph - 36, 'I или «Сумка» — закрыть', { fontSize: '13px', color: '#9fb0cc' });
+      const inputs = Object.entries(recipe.inputs)
+        .map(([k, v]) => `${v} ${ITEM_DEFS[k].name.toLowerCase()}`)
+        .join(' + ');
+
+      ui(this.add.text(x0 + 84, ry, `${recipe.name}`, { fontSize: '15px', color: '#ffffff' }));
+      ui(this.add.text(x0 + 84, ry + 20, inputs, { fontSize: '12px', color: '#9fb0cc' }));
+
+      const btn = this.add.text(x0 + pw - 96, ry + 8, 'Создать', {
+        fontSize: '14px', color: '#9ff09a', backgroundColor: '#1d2a1d', padding: { left: 10, right: 10, top: 6, bottom: 6 }
+      }).setInteractive({ useHandCursor: true });
+      ui(btn);
+      btn.on('pointerdown', () => this.craftRecipe(recipe));
+    });
+
+    const hint = this.add.text(x0 + 16, y0 + ph - 32, 'I — закрыть | ЛКМ ломать/рубить, ПКМ ставить', {
+      fontSize: '13px', color: '#9fb0cc'
+    });
     ui(hint);
+  }
+
+  private craftRecipe(recipe: Recipe): void {
+    if (!this.crafting.craft(recipe)) {
+      this.floatText(this.player.x, this.player.y, 'Не хватает ресурсов', '#ff8080');
+      return;
+    }
+
+    const out = recipe.output.id;
+    if (out === 'axe' || out === 'pickaxe') {
+      const tool = out as ToolId;
+      if (!this.tools.includes(tool)) this.tools.push(tool);
+      this.toolDurability[tool] = TOOL_MAX_DURABILITY;
+    }
+
+    this.floatText(this.player.x, this.player.y, `+ ${ITEM_DEFS[out].name}`, '#9ff09a');
+    this.refreshInventoryUI();
+    this.refreshHotbar();
+    this.updateHud();
+    this.persist();
   }
 
   private refreshInventoryUI(): void {
@@ -413,41 +576,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── крафт ──
-
-  private craft(): void {
-    if (this.crafting.craftWoodToStone()) {
-      this.updateHud();
-      if (this.inventoryOpen) this.refreshInventoryUI();
-      this.persist();
-    }
-  }
-
-  private craftAxe(): void {
-    if (!this.crafting.craftAxe()) return;
-
-    if (!this.tools.includes('axe')) this.tools.push('axe');
-    this.toolDurability['axe'] = TOOL_MAX_DURABILITY;
-
-    this.floatText(this.player.x, this.player.y, '+ топор', '#9ff09a');
-    this.refreshInventoryUI();
-    this.updateHud();
-    this.persist();
-  }
-
-  private craftPickaxe(): void {
-    if (!this.crafting.craftPickaxe()) return;
-
-    if (!this.tools.includes('pickaxe')) this.tools.push('pickaxe');
-    this.toolDurability['pickaxe'] = TOOL_MAX_DURABILITY;
-
-    this.floatText(this.player.x, this.player.y, '+ кирка', '#9ff09a');
-    this.refreshInventoryUI();
-    this.updateHud();
-    this.persist();
-  }
-
-  // ── остальное ──
+  // ── прочее ──
 
   private findResourceTarget(wx: number, wy: number): { x: number; y: number } | null {
     const direct = screenToWorld(wx, wy, 0);
@@ -503,8 +632,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isWalkableTile(tx: number, ty: number): boolean {
-    if (tx === this.bedX && ty === this.bedY) return false;
-
     const tile = WorldGen.getTile(tx, ty, WORLD_SEED);
 
     if (tile.terrain === 'water') return false;
@@ -622,130 +749,6 @@ export class GameScene extends Phaser.Scene {
     cam.centerOn(p.x, p.y + TILE_H / 2);
   }
 
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    const tilePos = screenToWorld(world.x, world.y, 0);
-
-    // кровать
-    if (tilePos.x === this.bedX && tilePos.y === this.bedY) {
-      if (this.nearBed()) this.doSleep(false);
-      else this.floatText(this.bedX + 0.5, this.bedY + 0.5, 'Подойди к кровати', '#ffffff');
-      return;
-    }
-
-    if (pointer.rightButtonDown() || this.removeMode) {
-      this.tryRemove(tilePos.x, tilePos.y);
-      return;
-    }
-
-    if (this.buildMode) {
-      this.tryPlace(tilePos.x, tilePos.y);
-      return;
-    }
-
-    const target = this.findResourceTarget(world.x, world.y);
-    this.hoverTarget = target;
-    if (target) {
-      this.tryHarvest(target.x, target.y);
-    }
-  }
-
-  private toggleBuild(): void {
-    this.buildMode = !this.buildMode;
-    if (this.buildMode) this.removeMode = false;
-    this.updateHud();
-  }
-
-  private toggleRemove(): void {
-    this.removeMode = !this.removeMode;
-    if (this.removeMode) this.buildMode = false;
-    this.updateHud();
-  }
-
-  private selectItem(item: ItemId): void {
-    this.selectedItem = item;
-    this.buildMode = true;
-    this.removeMode = false;
-    this.updateHud();
-  }
-
-  private tryPlace(x: number, y: number): void {
-    if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) return;
-
-    const tile = WorldGen.getTile(x, y, WORLD_SEED);
-
-    if (!this.build.canPlaceAt(tile, x, y)) return;
-    if (!this.spendEnergy(COST.place)) return;
-
-    if (this.inventory.remove(this.selectedItem, 1)) {
-      if (this.build.place(x, y, this.selectedItem)) {
-        this.updateHud();
-        if (this.inventoryOpen) this.refreshInventoryUI();
-        this.persist();
-      } else {
-        this.inventory.add(this.selectedItem, 1);
-      }
-    }
-  }
-
-  private tryRemove(x: number, y: number): void {
-    if (this.build.topZ(x, y) <= 0) return;
-    if (!this.spendEnergy(COST.remove)) return;
-
-    if (this.build.removeTop(x, y, this.inventory)) {
-      this.updateHud();
-      if (this.inventoryOpen) this.refreshInventoryUI();
-      this.persist();
-    }
-  }
-
-  private tryHarvest(x: number, y: number): void {
-    const tile = WorldGen.getTile(x, y, WORLD_SEED);
-    if (!tile.resource || this.build.isHarvested(x, y)) return;
-
-    const tool = TOOL_FOR_RESOURCE[tile.resource];
-
-    if (!this.tools.includes(tool)) {
-      this.floatText(x + 0.5, y + 0.5, 'Нужен: ' + TOOL_LABELS[tool], '#ff8080');
-      return;
-    }
-
-    if (!this.spendEnergy(tile.resource === 'tree' ? COST.chop : COST.mine)) return;
-
-    const oKey = `o${x}|${y}|0`;
-    this.hitTimes.set(oKey, this.time.now);
-    this.spawnHitFx(x, y);
-
-    const hits = this.harvestProgress.hit(x, y);
-
-    const dur = (this.toolDurability[tool] ?? 1) - 1;
-    this.toolDurability[tool] = dur;
-
-    if (dur <= 0) {
-      this.tools = this.tools.filter((t) => t !== tool);
-      delete this.toolDurability[tool];
-      this.floatText(x + 0.5, y + 0.5, TOOL_LABELS[tool] + ' сломался!', '#ff8080');
-      if (this.inventoryOpen) this.refreshInventoryUI();
-    }
-
-    if (hits >= HITS_REQUIRED) {
-      this.harvestProgress.clear(x, y);
-      this.hitTimes.delete(oKey);
-      this.build.harvest(x, y, tile, this.inventory);
-      this.floatText(x + 0.5, y + 0.5, tile.resource === 'tree' ? '+3 дерева' : '+3 камня', '#9ff09a');
-
-      if (this.hoverTarget && this.hoverTarget.x === x && this.hoverTarget.y === y) {
-        this.hoverTarget = null;
-      }
-
-      this.updateHud();
-      if (this.inventoryOpen) this.refreshInventoryUI();
-      this.persist();
-    } else {
-      this.floatText(x + 0.5, y + 0.5, `${hits}/${HITS_REQUIRED}`, '#ffffff');
-    }
-  }
-
   private spawnHitFx(x: number, y: number): void {
     const p = worldToScreen(x, y, 0);
 
@@ -786,18 +789,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(): void {
-    const mode = this.removeMode ? 'Снос' : this.buildMode ? 'Строительство' : 'Сбор';
-    const selected = this.selectedItem === 'wood' ? 'дерево' : 'камень';
+    const selected = ITEM_DEFS[HOTBAR_ITEMS[this.selectedSlot]].name;
+    const place = this.placeMode ? 'тап ставит' : 'тап ломает';
 
-    this.hud.setBuildMode(this.buildMode);
-    this.hud.setRemoveMode(this.removeMode);
-    this.hud.setSelected(this.selectedItem);
+    this.hud.setPlaceMode(this.placeMode);
 
     this.hud.setInfo(
-      `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')} | Зум: ${this.zoom.toFixed(2)}\n` +
-      `Инструменты: ${this.tools.map((t) => `${TOOL_LABELS[t]} (${this.toolDurability[t] ?? 0})`).join(', ') || 'нет'}\n` +
-      `Режим: ${mode} | Материал: ${selected} | I — сумка, E — спать у кровати\n` +
-      `ПК: WASD, ЛКМ, ПКМ — снос, колесико — зум, B/R/X/1/2`
+      `Слот: ${selected} | Режим моб.: ${place}\n` +
+      `ЛКМ — ломать/рубить | ПКМ — поставить | 1-3 — слоты | I — крафт | E — спать\n` +
+      `Зум: ${this.zoom.toFixed(2)}`
     );
   }
 
@@ -852,15 +852,6 @@ export class GameScene extends Phaser.Scene {
 
     const DEPTH_OFFSET = 1024;
 
-    // кровать
-    const bp = worldToScreen(this.bedX, this.bedY, 0);
-    used.add('bed');
-    this.pool
-      .acquire('bed', bp.x, bp.y + TILE_H, 'bed', DEPTH_OFFSET + this.bedX + this.bedY + 0.5)
-      .setOrigin(0.5, 1)
-      .setScale(1)
-      .setAlpha(1);
-
     const pp = worldToScreen(this.player.x, this.player.y, 0);
     const playerSX = pp.x;
     const playerSY = pp.y + TILE_H / 2 - 24;
@@ -874,13 +865,17 @@ export class GameScene extends Phaser.Scene {
 
         if (stack.length > 0) {
           stack.forEach((item, z) => {
+            const def = ITEM_DEFS[item];
+            const tex = def?.placeTexture ?? 'block_wood';
+            const scale = item === 'bed' ? 1 : BLOCK_SCALE;
+
             const oKey = `o${x}|${y}|${z}`;
             used.add(oKey);
             const sp = worldToScreen(x, y, z);
             this.pool
-              .acquire(oKey, sp.x, sp.y + TILE_H, 'block_' + item, DEPTH_OFFSET + x + y + 0.5 + z * 0.01)
+              .acquire(oKey, sp.x, sp.y + TILE_H, tex, DEPTH_OFFSET + x + y + 0.5 + z * 0.01)
               .setOrigin(0.5, 1)
-              .setScale(BLOCK_SCALE)
+              .setScale(scale)
               .setAlpha(1);
           });
         } else if (tile.resource && !this.build.isHarvested(x, y)) {

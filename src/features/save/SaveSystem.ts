@@ -22,7 +22,7 @@ export interface SaveData {
 }
 
 const KEY = 'browser-iso-world-save';
-const VERSION = 5;
+const VERSION = 6;
 
 export function defaultSave(): SaveData {
   return {

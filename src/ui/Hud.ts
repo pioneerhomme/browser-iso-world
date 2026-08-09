@@ -1,34 +1,41 @@
-import { ItemId } from '../core/types';
+export interface HotbarSlot {
+  label: string;
+  count: number;
+  selected: boolean;
+}
 
 export interface HudCallbacks {
-  onToggleBuild: () => void;
-  onToggleRemove: () => void;
-  onCraft: () => void;
-  onSelectWood: () => void;
-  onSelectStone: () => void;
+  onTogglePlace: () => void;
+  onToggleInventory: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  onToggleInventory: () => void;
+  onSelectSlot: (index: number) => void;
 }
 
 export class Hud {
   private info = document.getElementById('info') as HTMLDivElement;
-  private buildBtn = document.getElementById('btn-build') as HTMLButtonElement;
-  private removeBtn = document.getElementById('btn-remove') as HTMLButtonElement;
-  private woodBtn = document.getElementById('btn-wood') as HTMLButtonElement;
-  private stoneBtn = document.getElementById('btn-stone') as HTMLButtonElement;
+  private placeBtn = document.getElementById('btn-place') as HTMLButtonElement;
   private clockEl = document.getElementById('stat-day') as HTMLSpanElement;
   private energyFill = document.getElementById('energy-fill') as HTMLDivElement;
+  private hotbarBtns: HTMLButtonElement[] = [];
 
   constructor(callbacks: HudCallbacks) {
-    this.bind('btn-build', callbacks.onToggleBuild);
-    this.bind('btn-remove', callbacks.onToggleRemove);
-    this.bind('btn-craft', callbacks.onCraft);
-    this.bind('btn-wood', callbacks.onSelectWood);
-    this.bind('btn-stone', callbacks.onSelectStone);
+    this.bind('btn-place', callbacks.onTogglePlace);
+    this.bind('btn-bag', callbacks.onToggleInventory);
     this.bind('btn-zoom-in', callbacks.onZoomIn);
     this.bind('btn-zoom-out', callbacks.onZoomOut);
-    this.bind('btn-bag', callbacks.onToggleInventory);
+
+    const hotbar = document.getElementById('hotbar') as HTMLDivElement;
+    for (let i = 0; i < 3; i++) {
+      const btn = document.createElement('button');
+      btn.textContent = `Слот ${i + 1}`;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        callbacks.onSelectSlot(i);
+      });
+      hotbar.appendChild(btn);
+      this.hotbarBtns.push(btn);
+    }
   }
 
   private bind(id: string, handler: () => void): void {
@@ -41,19 +48,18 @@ export class Hud {
     });
   }
 
-  setBuildMode(on: boolean): void {
-    this.buildBtn.textContent = `Строительство: ${on ? 'ON' : 'OFF'}`;
-    this.buildBtn.classList.toggle('active', on);
+  setPlaceMode(on: boolean): void {
+    this.placeBtn.textContent = `Ставить: ${on ? 'ON' : 'OFF'}`;
+    this.placeBtn.classList.toggle('active', on);
   }
 
-  setRemoveMode(on: boolean): void {
-    this.removeBtn.textContent = `Снос: ${on ? 'ON' : 'OFF'}`;
-    this.removeBtn.classList.toggle('active', on);
-  }
-
-  setSelected(item: ItemId): void {
-    this.woodBtn.classList.toggle('active', item === 'wood');
-    this.stoneBtn.classList.toggle('active', item === 'stone');
+  setHotbar(slots: HotbarSlot[]): void {
+    slots.forEach((slot, i) => {
+      const btn = this.hotbarBtns[i];
+      if (!btn) return;
+      btn.textContent = `${i + 1}: ${slot.label} ×${slot.count}`;
+      btn.classList.toggle('active', slot.selected);
+    });
   }
 
   setInfo(text: string): void {
