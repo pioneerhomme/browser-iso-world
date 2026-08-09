@@ -27,6 +27,7 @@ import { SaveSystem } from '../features/save/SaveSystem';
 import { SpritePool } from '../features/render/SpritePool';
 import { ToolId, TOOL_FOR_RESOURCE, TOOL_LABELS, STARTER_TOOLS } from '../features/tools/ToolsSystem';
 import { HarvestProgress, HITS_REQUIRED } from '../features/harvest/HarvestProgress';
+import { getChunkTexture, CHUNK, CHUNK_OFF_X } from '../features/render/ChunkTerrain';
 
 export class GameScene extends Phaser.Scene {
   private hud!: Hud;
@@ -455,7 +456,7 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private renderWorld(): void {
+    private renderWorld(): void {
     const used = new Set<string>();
     const cam = this.cameras.main;
 
@@ -469,17 +470,27 @@ export class GameScene extends Phaser.Scene {
     const minY = Math.min(tl.y, tr.y, bl.y, br.y) - 20;
     const maxY = Math.max(tl.y, tr.y, bl.y, br.y) + 2;
 
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const tile = WorldGen.getTile(x, y, WORLD_SEED);
-        const p = worldToScreen(x, y, 0);
+    // ── земля: чанки 16×16 тайлов = 1 спрайт ──
+    const cMinX = Math.floor(minX / CHUNK);
+    const cMaxX = Math.floor(maxX / CHUNK);
+    const cMinY = Math.floor(minY / CHUNK);
+    const cMaxY = Math.floor(maxY / CHUNK);
 
-        const tKey = 't' + x + '|' + y;
-        used.add(tKey);
+    for (let cy = cMinY; cy <= cMaxY; cy++) {
+      for (let cx = cMinX; cx <= cMaxX; cx++) {
+        const p = worldToScreen(cx * CHUNK, cy * CHUNK, 0);
+        const cKey = 'c' + cx + '|' + cy;
+        used.add(cKey);
         this.pool
-          .acquire(tKey, p.x, p.y, 'tile_' + tile.terrain, x + y)
-          .setOrigin(0.5, 0)
-          .setScale(TERRAIN_SCALE);
+          .acquire(cKey, p.x - CHUNK_OFF_X, p.y, getChunkTexture(this, cx, cy), 0)
+          .setOrigin(0, 0);
+      }
+    }
+
+    // ── объекты: только тайлы с деревьями/камнями/постройками ──
+    for (let y = Math.floor(minY); y <= Math.floor(maxY); y++) {
+      for (let x = Math.floor(minX); x <= Math.floor(maxX); x++) {
+        const tile = WorldGen.getTile(x, y, WORLD_SEED);
 
         const stack = this.build.getStack(x, y);
 
@@ -513,6 +524,7 @@ export class GameScene extends Phaser.Scene {
             }
           }
 
+          const p = worldToScreen(x, y, 0);
           this.pool
             .acquire(oKey, p.x + ox, p.y + TILE_H, tile.resource === 'tree' ? 'tree' : 'rock', x + y + 0.5)
             .setOrigin(0.5, 1)
