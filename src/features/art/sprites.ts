@@ -1,29 +1,66 @@
 import { EquipmentSlot } from '../equipment/types';
 
 export const TREE_ROWS = [
-  '.....hh.....',
-  '....hGGG....',
-  '...hGGGGd...',
-  '..hGGgGGGd..',
-  '...GGGGGd...',
-  '....GGGd....',
-  '...GGGGGd...',
-  '..GGGgGGdd..',
-  '.hGGGGGGGdd.',
-  '..GGGGGGdd..',
-  '....TT......',
-  '....TTd.....',
-  '....TT......',
-  '...TTTT.....'
+  '......hhhh......',
+  '....hhGGGGhh....',
+  '...hGGGGGGGGh...',
+  '..hGGGGgGGGGGh..',
+  '..hGGGGGGGGGd...',
+  '...GGGGgGGGd....',
+  '....GGGGGGd.....',
+  '...hGGGGGGGd....',
+  '..hGGGgGGGGdd...',
+  '..GGGGGGGGGdd...',
+  '.hGGGGgGGGGGdd..',
+  '.GGGGGGGGGGGdd..',
+  '..GGGGGGGGGdd...',
+  '...GGGGGGGdd....',
+  '......TT........',
+  '......TTT.......',
+  '......TT........',
+  '.....TTTT.......'
 ];
 
 export const ROCK_ROWS = [
-  '...hhRR...',
-  '..hRRRRd..',
-  '.hRrRRRdd.',
-  '.RRRRrRdd.',
-  '..RRRRdd..',
-  '...RRdd...'
+  '....hhhh....',
+  '...hRRRRd...',
+  '..hRRRRRRd..',
+  '..hRrRRRRd..',
+  '.hRRRRRrRdd.',
+  '.RRRRRRRRdd.',
+  '..RRRRRRdd..',
+  '...RRRRdd...'
+];
+
+export const AXE_ROWS = [
+  '..MMM...',
+  '..MMMM..',
+  '..MMMM..',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...'
+];
+
+export const PICKAXE_ROWS = [
+  '.MMMMMM.',
+  'M.M..M.M',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '........'
+];
+
+export const BED_ROWS = [
+  '..WWWW........',
+  '..WWWWRRRRRRR.',
+  '..RRRRRRRRRRR.',
+  '..RRRRRRRRRRR.',
+  '..BBBBBBBBBBB.',
+  '..B.........B.'
 ];
 
 export function characterBaseRows(spread: boolean): string[] {
@@ -84,34 +121,3 @@ export function overlayRows(slot: EquipmentSlot, spread: boolean): string[] {
 
   return out;
 }
-
-export const AXE_ROWS = [
-  '..MMM...',
-  '..MMMM..',
-  '..MMMM..',
-  '...TT...',
-  '...TT...',
-  '...TT...',
-  '...TT...',
-  '...TT...'
-];
-
-export const PICKAXE_ROWS = [
-  '.MMMMMM.',
-  'M.M..M.M',
-  '...TT...',
-  '...TT...',
-  '...TT...',
-  '...TT...',
-  '...TT...',
-  '........'
-];
-
-export const BED_ROWS = [
-  '..WWWW........',
-  '..WWWWRRRRRRR.',
-  '..RRRRRRRRRRR.',
-  '..RRRRRRRRRRR.',
-  '..BBBBBBBBBBB.',
-  '..B.........B.'
-];

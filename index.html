@@ -73,6 +73,13 @@
         transition: width 0.2s;
       }
 
+      #hotbar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        pointer-events: auto;
+      }
+
       .hud-buttons {
         display: flex;
         flex-wrap: wrap;
@@ -80,7 +87,8 @@
         pointer-events: auto;
       }
 
-      .hud-buttons button {
+      .hud-buttons button,
+      #hotbar button {
         min-height: 44px;
         padding: 8px 12px;
         border-radius: 10px;
@@ -91,14 +99,112 @@
         touch-action: manipulation;
       }
 
-      .hud-buttons button.active {
+      .hud-buttons button.active,
+      #hotbar button.active {
         outline: 2px solid #8ab6ff;
         background: #22304a;
+      }
+
+      /* ── панель инвентаря (DOM, не зависит от зума) ── */
+      #inv-panel {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(430px, 94vw);
+        max-height: 82vh;
+        overflow-y: auto;
+        background: rgba(16, 20, 28, 0.97);
+        border: 2px solid #3a4a6a;
+        border-radius: 12px;
+        padding: 16px;
+        z-index: 20;
+        font-family: system-ui, sans-serif;
+        color: #fff;
+      }
+
+      #inv-panel.hidden {
+        display: none;
+      }
+
+      #inv-panel h2 {
+        margin: 0 0 10px;
+        font-size: 20px;
+      }
+
+      #inv-resources,
+      #inv-tools {
+        font-size: 15px;
+        color: #cfd6e6;
+        margin-bottom: 6px;
+      }
+
+      .recipe-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 0;
+        border-top: 1px solid #22304a;
+      }
+
+      .recipe-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 16px);
+        grid-template-rows: repeat(3, 16px);
+        gap: 2px;
+        flex: 0 0 auto;
+      }
+
+      .recipe-cell {
+        background: #1a2233;
+        border: 1px solid #3a4a6a;
+        border-radius: 3px;
+      }
+
+      .recipe-cell.cw {
+        background: #8a5a33;
+      }
+
+      .recipe-cell.cs {
+        background: #9aa2ad;
+      }
+
+      .recipe-info {
+        flex: 1 1 auto;
+      }
+
+      .recipe-info .muted {
+        font-size: 12px;
+        color: #9fb0cc;
+      }
+
+      .recipe-row button {
+        min-height: 36px;
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid #2f5c34;
+        background: #1d2a1d;
+        color: #9ff09a;
+        font-size: 14px;
+      }
+
+      .panel-hint {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #9fb0cc;
       }
     </style>
   </head>
   <body>
     <div id="game"></div>
+
+    <div id="inv-panel" class="hidden">
+      <h2>Инвентарь и крафт</h2>
+      <div id="inv-resources"></div>
+      <div id="inv-tools"></div>
+      <div id="inv-recipes"></div>
+      <div class="panel-hint">I или клик вне окна — закрыть | ЛКМ — ломать/рубить | ПКМ — поставить</div>
+    </div>
 
     <div id="hud">
       <div id="info">Загрузка...</div>

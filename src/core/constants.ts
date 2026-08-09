@@ -8,10 +8,10 @@ export const TERRAIN_SCALE = 0.5;
 export const BLOCK_SCALE = 0.5;
 export const CHAR_SCALE = 1.2;
 
-export const TREE_MIN = 1.6;
-export const TREE_MAX = 2.8;
-export const ROCK_MIN = 1.2;
-export const ROCK_MAX = 2.2;
+export const TREE_MIN = 1.4;
+export const TREE_MAX = 2.4;
+export const ROCK_MIN = 1.0;
+export const ROCK_MAX = 1.8;
 
 export const MIN_ZOOM = 1.0;
 export const MAX_ZOOM = 3;
