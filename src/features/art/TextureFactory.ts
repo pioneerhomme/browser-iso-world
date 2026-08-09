@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { hash2 } from '../../core/rng';
 import { ITEMS } from '../equipment/items';
 import { EquipmentSlot } from '../equipment/types';
 import { css, shade, hashString, canvasFromPixelMap, drawRows } from './pixel';
