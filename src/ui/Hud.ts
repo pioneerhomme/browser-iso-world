@@ -17,6 +17,8 @@ export class Hud {
   private removeBtn = document.getElementById('btn-remove') as HTMLButtonElement;
   private woodBtn = document.getElementById('btn-wood') as HTMLButtonElement;
   private stoneBtn = document.getElementById('btn-stone') as HTMLButtonElement;
+  private clockEl = document.getElementById('stat-day') as HTMLSpanElement;
+  private energyFill = document.getElementById('energy-fill') as HTMLDivElement;
 
   constructor(callbacks: HudCallbacks) {
     this.bind('btn-build', callbacks.onToggleBuild);
@@ -56,5 +58,13 @@ export class Hud {
 
   setInfo(text: string): void {
     this.info.textContent = text;
+  }
+
+  setClock(text: string): void {
+    this.clockEl.textContent = text;
+  }
+
+  setEnergy(fraction: number): void {
+    this.energyFill.style.width = `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`;
   }
 }

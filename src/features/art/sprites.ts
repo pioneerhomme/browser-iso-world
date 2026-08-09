@@ -106,3 +106,12 @@ export const PICKAXE_ROWS = [
   '...TT...',
   '........'
 ];
+
+export const BED_ROWS = [
+  '..WWWW........',
+  '..WWWWRRRRRRR.',
+  '..RRRRRRRRRRR.',
+  '..RRRRRRRRRRR.',
+  '..BBBBBBBBBBB.',
+  '..B.........B.'
+];

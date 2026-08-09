@@ -50,6 +50,29 @@
         white-space: pre-line;
       }
 
+      #stats {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+      }
+
+      #energy-bar {
+        width: 160px;
+        height: 12px;
+        border: 1px solid #4a5568;
+        border-radius: 6px;
+        background: #171d29;
+        overflow: hidden;
+      }
+
+      #energy-fill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #7ed957, #4a8f3c);
+        transition: width 0.2s;
+      }
+
       .hud-buttons {
         display: flex;
         flex-wrap: wrap;
@@ -79,6 +102,10 @@
 
     <div id="hud">
       <div id="info">Загрузка...</div>
+      <div id="stats">
+        <span id="stat-day">День 1, 06:00</span>
+        <div id="energy-bar"><div id="energy-fill"></div></div>
+      </div>
       <div class="hud-buttons">
         <button id="btn-build">Строительство: OFF</button>
         <button id="btn-remove">Снос: OFF</button>

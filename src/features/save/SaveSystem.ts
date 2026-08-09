@@ -1,6 +1,7 @@
 import { ItemId } from '../../core/types';
 import { EquipmentSlot } from '../equipment/types';
 import { ToolId } from '../tools/ToolsSystem';
+import { DAY_START, MAX_ENERGY } from '../time/TimeSystem';
 
 export interface SaveData {
   version: number;
@@ -14,11 +15,14 @@ export interface SaveData {
   zoom: number;
   tools: ToolId[];
   toolDurability: Record<string, number>;
+  day: number;
+  timeMin: number;
+  energy: number;
   savedAt: number;
 }
 
 const KEY = 'browser-iso-world-save';
-const VERSION = 4;
+const VERSION = 5;
 
 export function defaultSave(): SaveData {
   return {
@@ -33,6 +37,9 @@ export function defaultSave(): SaveData {
     zoom: 1.5,
     tools: ['axe', 'pickaxe'],
     toolDurability: { axe: 20, pickaxe: 20 },
+    day: 1,
+    timeMin: DAY_START,
+    energy: MAX_ENERGY,
     savedAt: 0
   };
 }
