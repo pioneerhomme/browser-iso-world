@@ -154,10 +154,8 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.pointerType === 'mouse') {
-        const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-        this.hoverTarget = this.findResourceTarget(world.x, world.y);
-      }
+      const world = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.hoverTarget = this.findResourceTarget(world.x, world.y);
     });
 
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
