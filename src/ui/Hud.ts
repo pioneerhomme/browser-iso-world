@@ -10,6 +10,7 @@ export interface HudCallbacks {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onSelectSlot: (index: number) => void;
+  onRotate: () => void;
 }
 
 export class Hud {
