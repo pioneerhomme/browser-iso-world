@@ -1,6 +1,7 @@
 export const TILE_W = 32;
 export const TILE_H = 16;
 export const TILE_Z = 10;
+export const REACH = 2; // радиус взаимодействия в тайлах
 
 export const WORLD_SEED = 20260807;
 

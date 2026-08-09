@@ -13,7 +13,8 @@ import {
   MAX_ZOOM,
   DEFAULT_ZOOM,
   RENDER_RADIUS_MAX,
-  CHUNK_BUDGET_PER_FRAME
+  CHUNK_BUDGET_PER_FRAME,
+  REACH
 } from '../core/constants';
 import { worldToScreen, screenToWorld } from '../core/iso';
 import { hash2 } from '../core/rng';
@@ -534,6 +535,10 @@ export class GameScene extends Phaser.Scene {
 
   private tryPlace(x: number, y: number): void {
     if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) return;
+    if (!this.inReach(x, y)) {
+      this.floatText(x + 0.5, y + 0.5, 'Подойди ближе', '#ff8080');
+      return;
+    }
 
     const itemId = HOTBAR_ITEMS[this.selectedSlot];
     if (this.inventory.get(itemId) <= 0) {
@@ -555,6 +560,10 @@ export class GameScene extends Phaser.Scene {
 
   private tryBreak(x: number, y: number): void {
     if (this.build.topZ(x, y) <= 0) return;
+    if (!this.inReach(x, y)) {
+      this.floatText(x + 0.5, y + 0.5, 'Подойди ближе', '#ff8080');
+      return;
+    }
 
     const item = this.build.removeTop(x, y);
     if (item) {
@@ -571,6 +580,11 @@ export class GameScene extends Phaser.Scene {
   private tryHarvest(x: number, y: number): void {
     const tile = WorldGen.getTile(x, y, WORLD_SEED);
     if (!tile.resource || this.build.isHarvested(x, y)) return;
+
+    if (!this.inReach(x, y)) {
+      this.floatText(x + 0.5, y + 0.5, 'Подойди ближе', '#ff8080');
+      return;
+    }
 
     const tool = TOOL_FOR_RESOURCE[tile.resource];
 
@@ -651,6 +665,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── призрак и рамка ──
+
+  private inReach(x: number, y: number): boolean {
+    return Math.hypot(x + 0.5 - this.player.x, y + 0.5 - this.player.y) <= REACH;
+  }
 
   private updateGhost(): void {
     const show = this.lastPointer !== null && !this.inventoryOpen && !this.sleeping;
@@ -977,6 +995,8 @@ export class GameScene extends Phaser.Scene {
     const DEPTH_OFFSET = 1024;
 
     const pp = worldToScreen(this.player.x, this.player.y, 0);
+    const playerSX = pp.x;
+    const playerSY = pp.y + TILE_H / 2 - 24;
     const playerDepthSum = this.player.x + this.player.y;
 
     for (let y = pcy - R; y <= pcy + R; y++) {
@@ -1022,11 +1042,27 @@ export class GameScene extends Phaser.Scene {
 
           const p = worldToScreen(x, y, 0);
 
+          let alpha = 1;
+          if (isTree && x + y >= Math.floor(playerDepthSum)) {
+            const halfW = 32 * scale;
+            const fullH = 76 * scale;
+            const bottom = p.y + TILE_H;
+
+            if (
+              playerSX > p.x + ox - halfW &&
+              playerSX < p.x + ox + halfW &&
+              playerSY > bottom - fullH &&
+              playerSY < bottom
+            ) {
+              alpha = 0.5;
+            }
+          }
+
           this.pool
             .acquire(oKey, p.x + ox, p.y + TILE_H, isTree ? 'tree' : 'rock', DEPTH_OFFSET + x + y + 0.45)
             .setOrigin(0.5, 1)
             .setScale(scale)
-            .setAlpha(1);
+            .setAlpha(alpha);
 
           if (this.hoverTarget && this.hoverTarget.x === x && this.hoverTarget.y === y) {
             const hKey = 'h' + x + '|' + y;

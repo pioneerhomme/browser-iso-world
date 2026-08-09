@@ -82,7 +82,7 @@ function makeBlock(
       let color: number | null = null;
 
       if (diamond(gx, gy) <= 1) {
-        color = hash2(gx, gy, seed) > 0.6 ? topAlt : top;
+        color = hash2(gx, gy, seed) > 0.75 ? topAlt : top;
       } else if (diamond(gx, gy - 5) <= 1) {
         color = gx < 8 ? left : right;
       }
@@ -95,7 +95,7 @@ function makeBlock(
 
   ctx.lineWidth = 1;
 
-  ctx.strokeStyle = css(shade(top, 1.3));
+  ctx.strokeStyle = css(shade(top, 1.15));
   ctx.beginPath();
   ctx.moveTo(0, 16);
   ctx.lineTo(32, 0);
@@ -143,8 +143,8 @@ export function createBaseTextures(scene: Phaser.Scene): void {
   addOutlineTexture(scene, 'outline_tree', TREE_ROWS, 4);
   addOutlineTexture(scene, 'outline_rock', ROCK_ROWS, 4);
 
-  makeBlock(scene, 'block_wood', 0xb08a54, 0xa37f4a, 0x8c6a3f, 0x77572f, 71);
-  makeBlock(scene, 'block_stone', 0xb7bec8, 0xaab2bd, 0x828a95, 0x6d747d, 72);
+  makeBlock(scene, 'block_wood', 0xa3763f, 0x8f6534, 0x7c5a33, 0x5f4222, 71);
+  makeBlock(scene, 'block_stone', 0x98a1ad, 0x8b95a1, 0x6f7885, 0x525b67, 72);
 
   addTexture(scene, 'spark', canvasFromPixelMap(['11', '11'], { '1': '#ffe9a8' }, 2));
 
