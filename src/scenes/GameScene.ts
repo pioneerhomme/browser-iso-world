@@ -84,7 +84,9 @@ export class GameScene extends Phaser.Scene {
   private saveTimer = 0;
 
   private inventoryOpen = false;
-  private invUI: Phaser.GameObjects.GameObject[] = [];
+  private invUI: Array<
+    Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image
+  > = [];
   private invWoodText!: Phaser.GameObjects.Text;
   private invStoneText!: Phaser.GameObjects.Text;
   private invAxeText!: Phaser.GameObjects.Text;
@@ -248,7 +250,9 @@ export class GameScene extends Phaser.Scene {
     const x0 = (w - pw) / 2;
     const y0 = (h - ph) / 2;
 
-    const ui = (o: Phaser.GameObjects.GameObject): Phaser.GameObjects.GameObject => {
+    type UIObj = Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image;
+
+    const ui = (o: UIObj): UIObj => {
       o.setScrollFactor(0);
       o.setDepth(5000);
       o.setVisible(false);
