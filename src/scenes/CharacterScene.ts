@@ -127,7 +127,7 @@ export class CharacterScene extends Phaser.Scene {
     this.previewImage = this.add.image(
       this.previewX,
       this.previewFeetY,
-      getHeroTexture(this, this.state.appearance(), 'down', 0)
+      getHeroTexture(this, this.state.appearance(), 'down', 0, null)
     );
     this.previewImage.setOrigin(0.5, 1);
 
@@ -246,7 +246,7 @@ export class CharacterScene extends Phaser.Scene {
   }
 
   private refresh(): void {
-    this.previewImage.setTexture(getHeroTexture(this, this.state.appearance(), 'down', 0));
+    this.previewImage.setTexture(getHeroTexture(this, this.state.appearance(), 'down', 0, null));
     this.previewImage.setScale(this.previewScale);
 
     for (const c of this.dynamic) {

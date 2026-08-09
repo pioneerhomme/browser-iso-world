@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { ITEMS } from '../equipment/items';
 import { Appearance, EquipmentSlot } from '../equipment/types';
+import { ToolId } from '../tools/ToolsSystem';
 import { css, shade, hashString } from './pixel';
 
-export type HeroFacing = 'down' | 'up' | 'right';
+export type HeroFacing = 'down' | 'up' | 'right' | 'downright' | 'upright';
 
 const W = 14;
 const H = 20;
@@ -49,52 +50,75 @@ const FRAMES = [
   { ll: 0, rl: 1, la: 0, ra: 1 }
 ];
 
-function drawHero(ctx: CanvasRenderingContext2D, facing: HeroFacing, frame: number, C: Colors): void {
+function drawTool(ctx: CanvasRenderingContext2D, x: number, y: number, tool: ToolId): void {
+  ctx.fillStyle = css(0x6b4a2b);
+  ctx.fillRect(x * PX, y * PX, PX, 4 * PX);
+
+  ctx.fillStyle = css(0x9aa2ad);
+  if (tool === 'axe') {
+    ctx.fillRect(x * PX, (y - 1) * PX, 2 * PX, 2 * PX);
+  } else {
+    ctx.fillRect((x - 1) * PX, (y - 1) * PX, 3 * PX, PX);
+  }
+}
+
+function drawHero(
+  ctx: CanvasRenderingContext2D,
+  facing: HeroFacing,
+  frame: number,
+  C: Colors,
+  tool: ToolId | null
+): void {
   const f = FRAMES[frame];
 
   const px = (x: number, y: number, w: number, h: number, c: number) => {
     ctx.fillStyle = css(c);
     ctx.fillRect(x * PX, y * PX, w * PX, h * PX);
   };
-  // деталь с объёмом: светлая левая кромка, тёмная правая
   const part = (x: number, y: number, w: number, h: number, c: number) => {
     px(x, y, w, h, c);
     px(x + w - 1, y, 1, h, shade(c, 0.78));
     px(x, y, 1, h, shade(c, 1.3));
   };
 
-  // тень под ногами
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.beginPath();
   ctx.ellipse((W / 2) * PX, (H - 0.5) * PX, 5 * PX, 1.2 * PX, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (facing === 'right') {
-    // ноги (профиль, шаг по горизонтали)
+  const isSide = facing === 'right' || facing === 'downright' || facing === 'upright';
+
+  if (isSide) {
+    const showEye = facing !== 'upright';
+
     part(6 - f.ll, 13, 2, 5, C.legs);
     px(6 - f.ll, 18, 3, 2, C.feet);
     part(7 + f.rl, 13, 2, 5, C.legs);
     px(7 + f.rl, 18, 3, 2, C.feet);
-    // торс
+
     part(5, 7, 5, 6, C.chest);
     px(5, 12, 5, 1, C.belt);
-    // рука (качание)
+
     const armX = 6 + f.ra - f.la;
     part(armX, 7, 2, 4, C.chest);
     px(armX, 11, 2, 2, C.hands);
-    // голова
+
     part(5, 1, 5, 6, C.skin);
-    px(9, 4, 1, 1, 0x262626);
+    if (showEye) px(9, 4, 1, 1, 0x262626);
+
     px(5, 0, 5, 2, C.hair);
-    px(5, 2, 2, 3, C.hair);
+    px(5, 2, 2, facing === 'upright' ? 4 : 3, C.hair);
+
     if (C.headTop !== null) {
       px(5, 0, 5, 3, C.headTop);
       if (C.headBrim !== null) px(8, 3, 3, 1, C.headBrim);
     }
+
+    if (tool) drawTool(ctx, 9, 11, tool);
     return;
   }
 
-  // вид спереди / сзади
+  // спереди / сзади
   part(5, 13, 2, 5 - f.ll, C.legs);
   px(4, 18 - f.ll, 3, 2, C.feet);
   part(7, 13, 2, 5 - f.rl, C.legs);
@@ -125,18 +149,23 @@ function drawHero(ctx: CanvasRenderingContext2D, facing: HeroFacing, frame: numb
     px(4, 0, 6, 3, C.headTop);
     if (C.headBrim !== null) px(3, 3, 8, 1, C.headBrim);
   }
+
+  if (tool) drawTool(ctx, facing === 'down' ? 11 : 10, 11, tool);
 }
 
 export function getHeroTexture(
   scene: Phaser.Scene,
   appearance: Appearance,
   facing: HeroFacing,
-  frame: number
+  frame: number,
+  tool: ToolId | null
 ): string {
   const slots: EquipmentSlot[] = ['head', 'chest', 'legs', 'hands', 'feet'];
   const key =
     'hero_' +
-    hashString([appearance.skin, ...slots.map((s) => appearance.equipped[s] ?? '-'), facing, frame].join('|'));
+    hashString(
+      [appearance.skin, ...slots.map((s) => appearance.equipped[s] ?? '-'), facing, frame, tool ?? '-'].join('|')
+    );
 
   if (scene.textures.exists(key)) return key;
 
@@ -145,7 +174,7 @@ export function getHeroTexture(
   canvas.height = H * PX;
   const ctx = canvas.getContext('2d')!;
 
-  drawHero(ctx, facing, frame, colorsFrom(appearance));
+  drawHero(ctx, facing, frame, colorsFrom(appearance), tool);
 
   const tex = scene.textures.addCanvas(key, canvas);
   if (tex) tex.setFilter(Phaser.Textures.FilterMode.NEAREST);

@@ -11,3 +11,5 @@ export const TOOL_FOR_RESOURCE: Record<'tree' | 'rock', ToolId> = {
 };
 
 export const STARTER_TOOLS: ToolId[] = ['axe', 'pickaxe'];
+
+export const TOOL_MAX_DURABILITY = 20;

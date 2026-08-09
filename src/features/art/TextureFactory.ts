@@ -3,7 +3,7 @@ import { hash2 } from '../../core/rng';
 import { ITEMS } from '../equipment/items';
 import { EquipmentSlot } from '../equipment/types';
 import { css, shade, hashString, canvasFromPixelMap, drawRows } from './pixel';
-import { TREE_ROWS, ROCK_ROWS, overlayRows } from './sprites';
+import { TREE_ROWS, ROCK_ROWS, AXE_ROWS, PICKAXE_ROWS, overlayRows } from './sprites';
 
 function addTexture(scene: Phaser.Scene, key: string, canvas: HTMLCanvasElement): void {
   const tex = scene.textures.addCanvas(key, canvas);
@@ -147,6 +147,16 @@ export function createBaseTextures(scene: Phaser.Scene): void {
   makeBlock(scene, 'block_stone', 0xb7bec8, 0xaab2bd, 0x828a95, 0x6d747d, 72);
 
   addTexture(scene, 'spark', canvasFromPixelMap(['11', '11'], { '1': '#ffe9a8' }, 2));
+
+    addTexture(scene, 'icon_axe', canvasFromPixelMap(AXE_ROWS, {
+    M: css(0x9aa2ad),
+    T: css(0x6b4a2b)
+  }, 3));
+
+  addTexture(scene, 'icon_pickaxe', canvasFromPixelMap(PICKAXE_ROWS, {
+    M: css(0x9aa2ad),
+    T: css(0x6b4a2b)
+  }, 3));
 }
 
 export function getItemIconTexture(scene: Phaser.Scene, itemId: string): string {

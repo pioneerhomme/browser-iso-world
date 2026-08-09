@@ -24,12 +24,20 @@ import { BuildManager } from '../features/building/BuildManager';
 import { CraftingSystem } from '../features/crafting/CraftingSystem';
 import { Hud } from '../ui/Hud';
 import { Appearance } from '../features/equipment/types';
-import { getHeroTexture } from '../features/art/CharacterSprites';
+import { getHeroTexture, HeroFacing } from '../features/art/CharacterSprites';
 import { SaveSystem } from '../features/save/SaveSystem';
 import { SpritePool } from '../features/render/SpritePool';
-import { ToolId, TOOL_FOR_RESOURCE, TOOL_LABELS, STARTER_TOOLS } from '../features/tools/ToolsSystem';
+import {
+  ToolId,
+  TOOL_FOR_RESOURCE,
+  TOOL_LABELS,
+  STARTER_TOOLS,
+  TOOL_MAX_DURABILITY
+} from '../features/tools/ToolsSystem';
 import { HarvestProgress, HITS_REQUIRED } from '../features/harvest/HarvestProgress';
 import { getChunkTexture, CHUNK, CHUNK_OFF_X } from '../features/render/ChunkTerrain';
+
+type Facing = 'down' | 'up' | 'left' | 'right' | 'downright' | 'downleft' | 'upright' | 'upleft';
 
 export class GameScene extends Phaser.Scene {
   private hud!: Hud;
@@ -41,6 +49,7 @@ export class GameScene extends Phaser.Scene {
   private harvestProgress = new HarvestProgress();
 
   private tools: ToolId[] = [...STARTER_TOOLS];
+  private toolDurability: Record<string, number> = { axe: TOOL_MAX_DURABILITY, pickaxe: TOOL_MAX_DURABILITY };
 
   private player = {
     x: 0,
@@ -54,7 +63,7 @@ export class GameScene extends Phaser.Scene {
   };
 
   private playerSprite!: Phaser.GameObjects.Image;
-  private facing: 'down' | 'up' | 'left' | 'right' = 'down';
+  private facing: Facing = 'down';
   private animTimer = 0;
   private animIndex = 0;
   private moving = false;
@@ -74,6 +83,13 @@ export class GameScene extends Phaser.Scene {
 
   private saveTimer = 0;
 
+  private inventoryOpen = false;
+  private invUI: Phaser.GameObjects.GameObject[] = [];
+  private invWoodText!: Phaser.GameObjects.Text;
+  private invStoneText!: Phaser.GameObjects.Text;
+  private invAxeText!: Phaser.GameObjects.Text;
+  private invPickText!: Phaser.GameObjects.Text;
+
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
 
   private keyW?: Phaser.Input.Keyboard.Key;
@@ -86,6 +102,7 @@ export class GameScene extends Phaser.Scene {
   private keyCraft?: Phaser.Input.Keyboard.Key;
   private keyOne?: Phaser.Input.Keyboard.Key;
   private keyTwo?: Phaser.Input.Keyboard.Key;
+  private keyInv?: Phaser.Input.Keyboard.Key;
 
   private onVisibility = (): void => {
     if (document.hidden) {
@@ -121,11 +138,12 @@ export class GameScene extends Phaser.Scene {
       if (savedTools.length > 0) {
         this.tools = savedTools;
       }
+      this.toolDurability = { ...this.toolDurability, ...(save.toolDurability ?? {}) };
     }
 
     this.pool = new SpritePool(this);
 
-    this.playerSprite = this.add.image(0, 0, getHeroTexture(this, this.appearance, 'down', 0));
+    this.playerSprite = this.add.image(0, 0, getHeroTexture(this, this.appearance, 'down', 0, this.heldTool()));
     this.playerSprite.setOrigin(0.5, 1);
     this.playerSprite.setScale(CHAR_SCALE);
 
@@ -142,9 +160,9 @@ export class GameScene extends Phaser.Scene {
       this.keyBuild = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
       this.keyRemove = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
       this.keyCraft = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
-
       this.keyOne = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
       this.keyTwo = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+      this.keyInv = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     }
 
     this.input.mouse?.disableContextMenu();
@@ -167,6 +185,8 @@ export class GameScene extends Phaser.Scene {
       document.removeEventListener('visibilitychange', this.onVisibility);
     });
 
+    this.buildInventoryUI();
+
     this.hud = new Hud({
       onToggleBuild: () => this.toggleBuild(),
       onToggleRemove: () => this.toggleRemove(),
@@ -174,7 +194,8 @@ export class GameScene extends Phaser.Scene {
       onSelectWood: () => this.selectItem('wood'),
       onSelectStone: () => this.selectItem('stone'),
       onZoomIn: () => this.adjustZoom(0.25),
-      onZoomOut: () => this.adjustZoom(-0.25)
+      onZoomOut: () => this.adjustZoom(-0.25),
+      onToggleInventory: () => this.toggleInventory()
     });
 
     this.updateHud();
@@ -188,6 +209,7 @@ export class GameScene extends Phaser.Scene {
     if (this.keyCraft && Phaser.Input.Keyboard.JustDown(this.keyCraft)) this.craft();
     if (this.keyOne && Phaser.Input.Keyboard.JustDown(this.keyOne)) this.selectItem('wood');
     if (this.keyTwo && Phaser.Input.Keyboard.JustDown(this.keyTwo)) this.selectItem('stone');
+    if (this.keyInv && Phaser.Input.Keyboard.JustDown(this.keyInv)) this.toggleInventory();
 
     if (Math.abs(this.targetZoom - this.zoom) > 0.001) {
       this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dt * 10);
@@ -210,7 +232,121 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── поиск цели рубки по габаритам спрайта ──
+  // ── инвентарь ──
+
+  private heldTool(): ToolId | null {
+    if (this.tools.includes('axe')) return 'axe';
+    if (this.tools.includes('pickaxe')) return 'pickaxe';
+    return null;
+  }
+
+  private buildInventoryUI(): void {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const pw = 340;
+    const ph = 320;
+    const x0 = (w - pw) / 2;
+    const y0 = (h - ph) / 2;
+
+    const ui = (o: Phaser.GameObjects.GameObject): Phaser.GameObjects.GameObject => {
+      o.setScrollFactor(0);
+      o.setDepth(5000);
+      o.setVisible(false);
+      this.invUI.push(o);
+      return o;
+    };
+
+    ui(this.add.rectangle(x0 + pw / 2, y0 + ph / 2, pw, ph, 0x10141c, 0.95).setStrokeStyle(2, 0x3a4a6a));
+    ui(this.add.text(x0 + 16, y0 + 12, 'Инвентарь', { fontSize: '20px', color: '#ffffff' }));
+
+    this.invWoodText = this.add.text(x0 + 16, y0 + 48, '', { fontSize: '15px', color: '#cfd6e6' }) as Phaser.GameObjects.Text;
+    ui(this.invWoodText);
+    this.invStoneText = this.add.text(x0 + 180, y0 + 48, '', { fontSize: '15px', color: '#cfd6e6' }) as Phaser.GameObjects.Text;
+    ui(this.invStoneText);
+
+    const axeIcon = this.add.image(x0 + 28, y0 + 96, 'icon_axe');
+    ui(axeIcon);
+    this.invAxeText = this.add.text(x0 + 48, y0 + 84, '', { fontSize: '15px', color: '#cfd6e6' }) as Phaser.GameObjects.Text;
+    ui(this.invAxeText);
+
+    const pickIcon = this.add.image(x0 + 28, y0 + 140, 'icon_pickaxe');
+    ui(pickIcon);
+    this.invPickText = this.add.text(x0 + 48, y0 + 128, '', { fontSize: '15px', color: '#cfd6e6' }) as Phaser.GameObjects.Text;
+    ui(this.invPickText);
+
+    const btnAxe = this.add.text(x0 + 16, y0 + 176, 'Сделать топор (3 дер + 2 кам)', {
+      fontSize: '14px', color: '#9ff09a', backgroundColor: '#1d2a1d', padding: { left: 8, right: 8, top: 6, bottom: 6 }
+    }).setInteractive({ useHandCursor: true });
+    ui(btnAxe);
+    btnAxe.on('pointerdown', () => this.craftAxe());
+
+    const btnPick = this.add.text(x0 + 16, y0 + 212, 'Сделать кирку (3 дер + 2 кам)', {
+      fontSize: '14px', color: '#9ff09a', backgroundColor: '#1d2a1d', padding: { left: 8, right: 8, top: 6, bottom: 6 }
+    }).setInteractive({ useHandCursor: true });
+    ui(btnPick);
+    btnPick.on('pointerdown', () => this.craftPickaxe());
+
+    const hint = this.add.text(x0 + 16, y0 + ph - 36, 'I или «Сумка» — закрыть', { fontSize: '13px', color: '#9fb0cc' });
+    ui(hint);
+  }
+
+  private refreshInventoryUI(): void {
+    this.invWoodText.setText(`Дерево: ${this.inventory.get('wood')}`);
+    this.invStoneText.setText(`Камень: ${this.inventory.get('stone')}`);
+    this.invAxeText.setText(
+      this.tools.includes('axe') ? `Топор: ${this.toolDurability['axe'] ?? 0}/${TOOL_MAX_DURABILITY}` : 'Топор: нет'
+    );
+    this.invPickText.setText(
+      this.tools.includes('pickaxe') ? `Кирка: ${this.toolDurability['pickaxe'] ?? 0}/${TOOL_MAX_DURABILITY}` : 'Кирка: нет'
+    );
+  }
+
+  private toggleInventory(): void {
+    this.inventoryOpen = !this.inventoryOpen;
+    for (const o of this.invUI) {
+      o.setVisible(this.inventoryOpen);
+    }
+    if (this.inventoryOpen) {
+      this.refreshInventoryUI();
+    }
+  }
+
+  // ── крафт ──
+
+  private craft(): void {
+    if (this.crafting.craftWoodToStone()) {
+      this.updateHud();
+      if (this.inventoryOpen) this.refreshInventoryUI();
+      this.persist();
+    }
+  }
+
+  private craftAxe(): void {
+    if (!this.crafting.craftAxe()) return;
+
+    if (!this.tools.includes('axe')) this.tools.push('axe');
+    this.toolDurability['axe'] = TOOL_MAX_DURABILITY;
+
+    this.floatText(this.player.x, this.player.y, '+ топор', '#9ff09a');
+    this.refreshInventoryUI();
+    this.updateHud();
+    this.persist();
+  }
+
+  private craftPickaxe(): void {
+    if (!this.crafting.craftPickaxe()) return;
+
+    if (!this.tools.includes('pickaxe')) this.tools.push('pickaxe');
+    this.toolDurability['pickaxe'] = TOOL_MAX_DURABILITY;
+
+    this.floatText(this.player.x, this.player.y, '+ кирка', '#9ff09a');
+    this.refreshInventoryUI();
+    this.updateHud();
+    this.persist();
+  }
+
+  // ── остальное ──
+
   private findResourceTarget(wx: number, wy: number): { x: number; y: number } | null {
     const direct = screenToWorld(wx, wy, 0);
 
@@ -256,11 +392,10 @@ export class GameScene extends Phaser.Scene {
       harvested: world.harvested,
       player: { x: this.player.x, y: this.player.y },
       zoom: this.targetZoom,
-      tools: this.tools
+      tools: this.tools,
+      toolDurability: this.toolDurability
     });
   }
-
-  // ── коллизии ──────────────────────────────────────────────
 
   private isWalkableTile(tx: number, ty: number): boolean {
     const tile = WorldGen.getTile(tx, ty, WORLD_SEED);
@@ -309,7 +444,10 @@ export class GameScene extends Phaser.Scene {
     this.moving = length > 0;
 
     if (this.moving) {
-      if (Math.abs(horizontal) > Math.abs(vertical)) {
+      // 8 направлений: диагонали отдельно
+      if (horizontal !== 0 && vertical !== 0) {
+        this.facing = ((vertical < 0 ? 'up' : 'down') + (horizontal > 0 ? 'right' : 'left')) as Facing;
+      } else if (horizontal !== 0) {
         this.facing = horizontal > 0 ? 'right' : 'left';
       } else {
         this.facing = vertical > 0 ? 'down' : 'up';
@@ -339,13 +477,34 @@ export class GameScene extends Phaser.Scene {
     }
 
     const frame = this.moving ? [1, 2, 3, 2][this.animIndex] : 0;
-    const base = this.facing === 'left' ? 'right' : this.facing;
-    const tex = getHeroTexture(this, this.appearance, base, frame);
+
+    let base: HeroFacing;
+    let flip = false;
+
+    switch (this.facing) {
+      case 'left':
+        base = 'right';
+        flip = true;
+        break;
+      case 'downleft':
+        base = 'downright';
+        flip = true;
+        break;
+      case 'upleft':
+        base = 'upright';
+        flip = true;
+        break;
+      default:
+        base = this.facing as HeroFacing;
+        break;
+    }
+
+    const tex = getHeroTexture(this, this.appearance, base, frame, this.heldTool());
 
     if (this.playerSprite.texture.key !== tex) {
       this.playerSprite.setTexture(tex);
     }
-    this.playerSprite.setFlipX(this.facing === 'left');
+    this.playerSprite.setFlipX(flip);
   }
 
   private updateCamera(): void {
@@ -371,7 +530,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // рубка: цель ищем по спрайту, а не по тайлу под курсором
     const target = this.findResourceTarget(world.x, world.y);
     this.hoverTarget = target;
     if (target) {
@@ -398,13 +556,6 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
   }
 
-  private craft(): void {
-    if (this.crafting.craftWoodToStone()) {
-      this.updateHud();
-      this.persist();
-    }
-  }
-
   private tryPlace(x: number, y: number): void {
     if (Math.round(this.player.x) === x && Math.round(this.player.y) === y) return;
 
@@ -415,6 +566,7 @@ export class GameScene extends Phaser.Scene {
     if (this.inventory.remove(this.selectedItem, 1)) {
       if (this.build.place(x, y, this.selectedItem)) {
         this.updateHud();
+        if (this.inventoryOpen) this.refreshInventoryUI();
         this.persist();
       } else {
         this.inventory.add(this.selectedItem, 1);
@@ -425,6 +577,7 @@ export class GameScene extends Phaser.Scene {
   private tryRemove(x: number, y: number): void {
     if (this.build.removeTop(x, y, this.inventory)) {
       this.updateHud();
+      if (this.inventoryOpen) this.refreshInventoryUI();
       this.persist();
     }
   }
@@ -446,6 +599,17 @@ export class GameScene extends Phaser.Scene {
 
     const hits = this.harvestProgress.hit(x, y);
 
+    // прочность инструмента
+    const dur = (this.toolDurability[tool] ?? 1) - 1;
+    this.toolDurability[tool] = dur;
+
+    if (dur <= 0) {
+      this.tools = this.tools.filter((t) => t !== tool);
+      delete this.toolDurability[tool];
+      this.floatText(x + 0.5, y + 0.5, TOOL_LABELS[tool] + ' сломался!', '#ff8080');
+      if (this.inventoryOpen) this.refreshInventoryUI();
+    }
+
     if (hits >= HITS_REQUIRED) {
       this.harvestProgress.clear(x, y);
       this.hitTimes.delete(oKey);
@@ -457,6 +621,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       this.updateHud();
+      if (this.inventoryOpen) this.refreshInventoryUI();
       this.persist();
     } else {
       this.floatText(x + 0.5, y + 0.5, `${hits}/${HITS_REQUIRED}`, '#ffffff');
@@ -512,8 +677,8 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.setInfo(
       `Дерево: ${this.inventory.get('wood')} | Камень: ${this.inventory.get('stone')} | Зум: ${this.zoom.toFixed(2)}\n` +
-      `Инструменты: ${this.tools.map((t) => TOOL_LABELS[t]).join(', ')}\n` +
-      `Режим: ${mode} | Материал: ${selected} | Клик по кроне/камню рубит цель\n` +
+      `Инструменты: ${this.tools.map((t) => `${TOOL_LABELS[t]} (${this.toolDurability[t] ?? 0})`).join(', ') || 'нет'}\n` +
+      `Режим: ${mode} | Материал: ${selected} | I — инвентарь/крафт\n` +
       `ПК: WASD, ЛКМ, ПКМ — снос, колесико — зум, B/R/X/1/2`
     );
   }
@@ -531,7 +696,6 @@ export class GameScene extends Phaser.Scene {
     const pcx = Math.round(this.player.x);
     const pcy = Math.round(this.player.y);
 
-    // ── чанки земли ──
     const cMinX = Math.floor((pcx - R) / CHUNK);
     const cMaxX = Math.floor((pcx + R) / CHUNK);
     const cMinY = Math.floor((pcy - R) / CHUNK);
@@ -568,7 +732,6 @@ export class GameScene extends Phaser.Scene {
       this.chunkLastUsed.set(texKey, this.time.now);
     }
 
-    // ── объекты ──
     const DEPTH_OFFSET = 1024;
 
     const pp = worldToScreen(this.player.x, this.player.y, 0);
@@ -637,7 +800,6 @@ export class GameScene extends Phaser.Scene {
             .setScale(scale)
             .setAlpha(alpha);
 
-          // обводка цели (ховер мыши / последний тап)
           if (this.hoverTarget && this.hoverTarget.x === x && this.hoverTarget.y === y) {
             const hKey = 'h' + x + '|' + y;
             used.add(hKey);
@@ -653,7 +815,6 @@ export class GameScene extends Phaser.Scene {
 
     this.pool.flush(used);
 
-    // ── выгрузка старых чанков ──
     this.evictTimer++;
     if (this.evictTimer >= 300) {
       this.evictTimer = 0;

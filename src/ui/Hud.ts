@@ -8,6 +8,7 @@ export interface HudCallbacks {
   onSelectStone: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  onToggleInventory: () => void;
 }
 
 export class Hud {
@@ -25,6 +26,7 @@ export class Hud {
     this.bind('btn-stone', callbacks.onSelectStone);
     this.bind('btn-zoom-in', callbacks.onZoomIn);
     this.bind('btn-zoom-out', callbacks.onZoomOut);
+    this.bind('btn-bag', callbacks.onToggleInventory);
   }
 
   private bind(id: string, handler: () => void): void {

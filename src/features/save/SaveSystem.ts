@@ -13,11 +13,12 @@ export interface SaveData {
   player: { x: number; y: number };
   zoom: number;
   tools: ToolId[];
+  toolDurability: Record<string, number>;
   savedAt: number;
 }
 
 const KEY = 'browser-iso-world-save';
-const VERSION = 3;
+const VERSION = 4;
 
 export function defaultSave(): SaveData {
   return {
@@ -31,6 +32,7 @@ export function defaultSave(): SaveData {
     player: { x: 0, y: 0 },
     zoom: 1.5,
     tools: ['axe', 'pickaxe'],
+    toolDurability: { axe: 20, pickaxe: 20 },
     savedAt: 0
   };
 }

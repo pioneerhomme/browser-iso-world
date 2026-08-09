@@ -84,3 +84,25 @@ export function overlayRows(slot: EquipmentSlot, spread: boolean): string[] {
 
   return out;
 }
+
+export const AXE_ROWS = [
+  '..MMM...',
+  '..MMMM..',
+  '..MMMM..',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...'
+];
+
+export const PICKAXE_ROWS = [
+  '.MMMMMM.',
+  'M.M..M.M',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '...TT...',
+  '........'
+];
